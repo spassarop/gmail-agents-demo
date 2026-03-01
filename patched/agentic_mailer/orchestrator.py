@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional
 
 from .config import ModelConfig, OllamaConfig
 from .gmail_client import GmailClient, GmailClientError

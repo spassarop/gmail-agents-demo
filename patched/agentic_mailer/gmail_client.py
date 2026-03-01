@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import base64
 import logging
-import os
 from email.message import EmailMessage
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
