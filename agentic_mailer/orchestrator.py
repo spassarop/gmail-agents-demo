@@ -194,7 +194,7 @@ class Orchestrator:
 
     def _list_emails(self, session: SessionState, args: Dict[str, Any], trace: List[TraceEvent]) -> ChatResponse:
         query = str(args.get("query", "") or "")
-        max_results = int(args.get("max_results", 5) or 5)
+        max_results = int(args.get("count") or args.get("limit") or args.get("max_results", 5))
         label = args.get("label")
         label_ids = None
 
@@ -241,7 +241,7 @@ class Orchestrator:
         return ChatResponse(assistant_text=assistant_text, trace=trace)
 
     def _summarize_email(self, session: SessionState, user_message: str, args: Dict[str, Any], trace: List[TraceEvent]) -> ChatResponse:
-        email_number = args.get("email_number")
+        email_number = args.get("email_id") or args.get("email_number")
         if email_number is None:
             email_number = extract_email_number(user_message)
         try:
@@ -298,7 +298,7 @@ class Orchestrator:
                     trace.append(TraceEvent(name="gmail_create_draft", data={"draft_id": draft.id, "to": to_email, "subject": subject}))
                 else:
                     # DELETE/TRASH
-                    email_number2 = args2.get("email_number") or args2.get("email_ids")[0]
+                    email_number2 = args2.get("email_number") or args2.get("email_id") or (args2.get("email_ids")[0] if type(args2.get("email_ids")) is list and len(args2.get("email_ids")) > 0 else None)
                     try:
                         email_number2_int = int(email_number2)
                     except Exception:
@@ -357,7 +357,7 @@ class Orchestrator:
         return ChatResponse(assistant_text=assistant_text, trace=trace)
 
     def _send_email(self, session: SessionState, args: Dict[str, Any], trace: List[TraceEvent]) -> ChatResponse:
-        to_email = str(args.get("to_email", "") or "")
+        to_email = str(args.get("to") or args.get("to_email", ""))
         subject = str(args.get("subject", "") or "(no subject)")
         body = str(args.get("body", "") or "")
 
