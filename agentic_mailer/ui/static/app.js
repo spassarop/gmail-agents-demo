@@ -7,6 +7,7 @@
   const toggleThemeBtn = document.getElementById("toggleThemeBtn");
   const tracePanel = document.getElementById("tracePanel");
   const traceOutput = document.getElementById("traceOutput");
+  const pendingSpinner = document.getElementById("pendingSpinner");
 
   let ws = null;
   let traceVisible = true;
@@ -101,6 +102,7 @@
     ws = new WebSocket(`${proto}://${location.host}/ws`);
 
     ws.addEventListener("open", () => {
+      setLoading(false);
       addMessage("assistant", "Connected. Try: “List my newest 5 emails”", null);
     });
 
@@ -109,20 +111,33 @@
       try { msg = JSON.parse(ev.data); } catch (e) { msg = { type: "error", error: ev.data }; }
 
       if (msg.type === "assistant_message") {
+        setLoading(false);
         addMessage("assistant", msg.assistant_text || "", {
           pending_action_id: msg.pending_action_id || null,
           pending_action_summary: msg.pending_action_summary || null
         });
         setTrace(msg.trace || []);
       } else if (msg.type === "error") {
+        setLoading(false);
         addMessage("assistant", "Error: " + (msg.error || "unknown"), null);
       }
     });
 
     ws.addEventListener("close", () => {
+      setLoading(false);
       addMessage("assistant", "Disconnected. Reconnecting…", null);
       setTimeout(connect, 800);
     });
+  }
+
+  function setLoading(isLoading) {
+    if (pendingSpinner) {
+      pendingSpinner.classList.toggle("hidden", !isLoading);
+    }
+    if (sendBtn) {
+      sendBtn.disabled = !!isLoading;
+      sendBtn.textContent = isLoading ? "Sending…" : "Send";
+    }
   }
 
   function sendText(text) {
@@ -130,8 +145,10 @@
     if (!t) return;
     addMessage("user", t, null);
     if (ws && ws.readyState === WebSocket.OPEN) {
+      setLoading(true);
       ws.send(JSON.stringify({ type: "user_message", text: t }));
     } else {
+      setLoading(false);
       addMessage("assistant", "WebSocket not connected yet.", null);
     }
   }

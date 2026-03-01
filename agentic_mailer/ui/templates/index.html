@@ -24,6 +24,9 @@
       <div id="chatLog" class="chatLog" aria-live="polite"></div>
 
       <div class="composer">
+        <div id="pendingSpinner" class="spinner hidden" aria-live="polite" aria-label="Waiting for response">
+          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        </div>
         <input id="chatInput" class="chatInput" type="text" placeholder="Ask: list my latest emails, summarize #1, draft a reply..." autocomplete="off" />
         <button id="sendBtn" class="btn primary">Send</button>
       </div>

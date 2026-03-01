@@ -32,7 +32,7 @@
 
   --input-bg: #ffffff;
   --btn-bg: #ffffff;
-  --primary-bg: #1d4ed8;
+  --primary-bg: #a0d8ff;
 
   --trace-bg: #0b1220;
   --trace-text: #e6e6e6;
@@ -115,6 +115,34 @@ body {
   padding: 10px;
   border-top: 1px solid var(--border);
   background: var(--panel2);
+}
+
+.spinner {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+}
+
+.spinner.hidden {
+  display: none;
+}
+
+.spinner .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0.35;
+  animation: dotPulse 1s infinite ease-in-out;
+}
+
+.spinner .dot:nth-child(2) { animation-delay: 0.15s; }
+.spinner .dot:nth-child(3) { animation-delay: 0.30s; }
+
+@keyframes dotPulse {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.25; }
+  40% { transform: translateY(-3px); opacity: 0.85; }
 }
 .chatInput {
   flex: 1;
