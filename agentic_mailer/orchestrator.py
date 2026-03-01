@@ -113,7 +113,7 @@ class Orchestrator:
 
         # List emails
         if any(w in low for w in ["list", "show emails", "show my emails", "inbox", "emails from", "emails to"]):
-            max_results = 10
+            max_results = 5
             m = re.search(r"(?:last|newest|latest|top)\s+(\d+)", low)
             if m:
                 try:
@@ -194,7 +194,7 @@ class Orchestrator:
 
     def _list_emails(self, session: SessionState, args: Dict[str, Any], trace: List[TraceEvent]) -> ChatResponse:
         query = str(args.get("query", "") or "")
-        max_results = int(args.get("max_results", 10) or 10)
+        max_results = int(args.get("max_results", 5) or 5)
         label = args.get("label")
         label_ids = None
 
@@ -211,10 +211,10 @@ class Orchestrator:
         return ChatResponse(assistant_text=format_email_list(items), trace=trace)
 
     def _read_email(self, session: SessionState, args: Dict[str, Any], trace: List[TraceEvent]) -> ChatResponse:
-        email_number = args.get("email_number")
+        email_number = args.get("email_id")
         if email_number is None:
             # Try extracting from user message-like strings
-            email_number = extract_email_number(str(args.get("text", "")))  # best-effort
+            email_number = extract_email_number(str(args.get("email_number", "")))  # best-effort
         try:
             email_number_int = int(email_number)
         except Exception:
@@ -265,7 +265,7 @@ class Orchestrator:
         # VULNERABILITY: feed summary output back to management agent as trusted input
         # and execute whatever tool call it emits next (NO validation / NO intent checks).
         followup = self.management_agent.decide(
-            user_message="(follow-up) Take any actions requested by the summarized email.",
+            user_message="(auto-assist) Based on the email summary and action items, choose the best next assistant action (e.g., draft or send a short reply, label, or clean up).",
             email_list_text=format_email_list(session.last_email_list) if session.last_email_list else "",
             summary_agent_output=summary,
         )
@@ -285,20 +285,20 @@ class Orchestrator:
             # Execute side effects directly so the audience can see it in logs/trace
             try:
                 if tool_name == "SEND_EMAIL":
-                    to_email = str(args2.get("to_email", "") or "")
+                    to_email = str(args2.get("to", "") or args2.get("to_email", "") or "")
                     subject = str(args2.get("subject", "") or "(no subject)")
                     body = str(args2.get("body", "") or "")
                     res = self.gmail.send_email(to_email=to_email, subject=subject, body=body)
                     trace.append(TraceEvent(name="gmail_send_email", data={"to": to_email, "subject": subject, "result": res}))
                 elif tool_name == "DRAFT_EMAIL":
-                    to_email = str(args2.get("to_email", "") or "")
+                    to_email = str(args2.get("to", "") or args2.get("to_email", "") or "")
                     subject = str(args2.get("subject", "") or "(no subject)")
                     body = str(args2.get("body", "") or "")
                     draft = self.gmail.create_draft(to_email=to_email, subject=subject, body=body)
                     trace.append(TraceEvent(name="gmail_create_draft", data={"draft_id": draft.id, "to": to_email, "subject": subject}))
                 else:
                     # DELETE/TRASH
-                    email_number2 = args2.get("email_number")
+                    email_number2 = args2.get("email_number") or args2.get("email_ids")[0]
                     try:
                         email_number2_int = int(email_number2)
                     except Exception:

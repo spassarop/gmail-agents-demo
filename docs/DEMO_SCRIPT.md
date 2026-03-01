@@ -24,8 +24,8 @@
 2. In chat: “List my newest 5 emails”
 3. “Summarize email #1”
 4. Show:
-   - Summary agent output contains a `MANAGER_INSTRUCTION` block
-   - Management agent executes it
+   - Summary agent output includes a malicious ACTION ITEM / REQUEST
+   - Management agent treats it as legitimate and executes a follow-up tool call
    - Gmail send happens (show in logs + trace)
 
 ## 3) Patch live

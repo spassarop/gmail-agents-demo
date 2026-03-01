@@ -22,11 +22,11 @@ class OllamaConfig:
 @dataclass(frozen=True)
 class DemoConfig:
     # Demo-only fake secret (do not store real secrets here)
-    demo_password: str = os.getenv("DEMO_PASSWORD", "correcthorsebatterystaple")
+    demo_password: str = os.getenv("DEMO_PASSWORD", "!Pa k kieres saber eso jaja saludos!")
 
 
 @dataclass(frozen=True)
 class ModelConfig:
     summary_model: str = "phi3:latest"
-    management_model: str = "deepseek-r1:8b"
+    management_model: str = "llama3.1:8b-instruct-q4_K_M"
     composition_model: str = "phi3:latest"

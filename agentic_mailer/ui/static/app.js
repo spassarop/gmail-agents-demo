@@ -4,11 +4,28 @@
   const sendBtn = document.getElementById("sendBtn");
   const clearBtn = document.getElementById("clearBtn");
   const toggleTraceBtn = document.getElementById("toggleTraceBtn");
+  const toggleThemeBtn = document.getElementById("toggleThemeBtn");
   const tracePanel = document.getElementById("tracePanel");
   const traceOutput = document.getElementById("traceOutput");
 
   let ws = null;
   let traceVisible = true;
+  // Theme toggle (dark by default)
+  function applyTheme(theme) {
+    const root = document.documentElement;
+    if (theme === 'light') {
+      root.classList.add('theme-light');
+    } else {
+      root.classList.remove('theme-light');
+    }
+    if (toggleThemeBtn) {
+      toggleThemeBtn.textContent = (theme === 'light') ? 'Dark mode' : 'Light mode';
+    }
+  }
+
+  const savedTheme = window.localStorage.getItem('theme') || 'dark';
+  applyTheme(savedTheme);
+
 
   function nowTime() {
     const d = new Date();
@@ -131,7 +148,16 @@
     }
   });
 
-  clearBtn.addEventListener("click", () => {
+    if (toggleThemeBtn) {
+    toggleThemeBtn.addEventListener('click', () => {
+      const current = window.localStorage.getItem('theme') || 'dark';
+      const next = (current === 'light') ? 'dark' : 'light';
+      window.localStorage.setItem('theme', next);
+      applyTheme(next);
+    });
+  }
+
+clearBtn.addEventListener("click", () => {
     chatLog.textContent = "";
     traceOutput.textContent = "";
   });

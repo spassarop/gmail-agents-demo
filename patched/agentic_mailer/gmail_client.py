@@ -73,7 +73,7 @@ class GmailClient:
     def list_messages(
         self,
         query: str = "",
-        max_results: int = 10,
+        max_results: int = 5,
         label_ids: Optional[List[str]] = None,
     ) -> List[EmailListItem]:
         """List messages and return enriched metadata (subject/from/date/snippet)."""

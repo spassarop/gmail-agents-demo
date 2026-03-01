@@ -135,7 +135,7 @@ class Orchestrator:
 
         # List emails
         if any(w in low for w in ["list", "show emails", "show my emails", "inbox", "emails from", "emails to"]):
-            max_results = 10
+            max_results = 5
             m = re.search(r"(?:last|newest|latest|top)\s+(\d+)", low)
             if m:
                 try:
