@@ -104,6 +104,8 @@ class Orchestrator:
                 return self._draft_email(session, user_message, tool_req, trace)
 
             if isinstance(tool_req, TrashEmailRequest):
+                if decision.require_confirmation:
+                    return self._prepare_trash_with_confirmation(session, tool_req, decision.reason, trace)
                 return self._trash_email(session, tool_req, trace)
 
             if isinstance(tool_req, SendEmailRequest):
@@ -337,6 +339,56 @@ class Orchestrator:
         trace.append(TraceEvent(name="gmail_trash_message", data={"id": mid}))
         return ChatResponse(assistant_text=f"Moved email #{req.args.email_number} to Trash.", trace=trace)
 
+    def _prepare_trash_with_confirmation(
+        self, session: SessionState, req: TrashEmailRequest, gate_reason: str, trace: List[TraceEvent]
+    ) -> ChatResponse:
+        """HITL flow for destructive operations (trash/delete)."""
+        n = req.args.email_number
+        mid = self._resolve_email_id(session, n)
+        if not mid:
+            return ChatResponse(assistant_text="Could not resolve email number for trash.", trace=trace)
+
+        # Pull best-effort context from last list for UX.
+        subj = "(unknown subject)"
+        frm = "(unknown sender)"
+        try:
+            idx = n - 1
+            if 0 <= idx < len(session.last_email_list):
+                it = session.last_email_list[idx]
+                subj = (it.subject or subj).strip()
+                frm = (it.from_email or frm).strip()
+        except Exception:
+            pass
+
+        pa = self.hitl.create_pending(
+            session=session,
+            kind="trash_message",
+            summary=f"About to move email #{n} to Trash (subject: {subj}). Confirm to proceed.",
+            payload={"message_id": mid, "email_number": n, "subject": subj},
+        )
+
+        trace.append(
+            TraceEvent(
+                name="hitl_prepare_trash",
+                data={"pending_action_id": pa.id, "message_id": mid, "email_number": n, "subject": subj},
+            )
+        )
+
+        assistant_text = (
+            "I will NOT move an email to Trash without confirmation.\n\n"
+            f"Email #{n}: {subj}\n"
+            f"From: {frm}\n\n"
+            f"Click Confirm or type: /confirm {pa.id}\n"
+            f"(Gate: {gate_reason})"
+        )
+
+        return ChatResponse(
+            assistant_text=assistant_text,
+            trace=trace,
+            pending_action_id=pa.id,
+            pending_action_summary=pa.summary,
+        )
+
     # -------------------------
     # HITL send flow
     # -------------------------
@@ -389,6 +441,15 @@ class Orchestrator:
             res = self.gmail.send_draft(draft_id)
             trace.append(TraceEvent(name="gmail_send_draft", data={"draft_id": draft_id, "result": res}))
             return ChatResponse(assistant_text="✅ Sent (after confirmation).", trace=trace)
+
+        if pa.kind == "trash_message":
+            mid = str(pa.payload.get("message_id", ""))
+            email_number = pa.payload.get("email_number")
+            if not mid:
+                return ChatResponse(assistant_text="Pending action missing message_id; cannot trash.", trace=trace)
+            self.gmail.trash_message(mid)
+            trace.append(TraceEvent(name="gmail_trash_message", data={"id": mid, "email_number": email_number}))
+            return ChatResponse(assistant_text=f"🗑️ Moved email #{email_number} to Trash (after confirmation).", trace=trace)
 
         return ChatResponse(assistant_text=f"Unknown pending action kind: {pa.kind}", trace=trace)
 

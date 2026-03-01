@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date, datetime
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 
 def safe_truncate(s: str, limit: int = 1500) -> str:
