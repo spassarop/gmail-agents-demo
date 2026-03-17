@@ -1,0 +1,199 @@
+:root {
+  --bg: #0b0c10;
+  --panel: #151720;
+  --panel2: #11131a;
+  --text: #e6e6e6;
+  --muted: #a7a7a7;
+  --border: #2a2d3a;
+
+  --msg-bg: #0f1119;
+  --msg-user-bg: #0f1b18;
+  --msg-assistant-bg: #111626;
+
+  --input-bg: #0d0f16;
+  --btn-bg: #0d0f16;
+  --primary-bg: #14314a;
+
+  --trace-bg: #0d0f16;
+  --trace-text: #c9d1d9;
+}
+
+:root.theme-light {
+  --bg: #f6f7fb;
+  --panel: #ffffff;
+  --panel2: #f0f2f7;
+  --text: #0b1220;
+  --muted: #4b5563;
+  --border: #d0d7e2;
+
+  --msg-bg: #ffffff;
+  --msg-user-bg: #eef6ff;
+  --msg-assistant-bg: #f5f3ff;
+
+  --input-bg: #ffffff;
+  --btn-bg: #ffffff;
+  --primary-bg: #a0d8ff;
+
+  --trace-bg: #0b1220;
+  --trace-text: #e6e6e6;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel2);
+}
+
+.h1 { font-weight: 700; font-size: 18px; }
+.subtitle { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.badge {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+}
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+
+.layout {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 12px;
+  padding: 12px;
+  height: calc(100vh - 60px);
+}
+
+.chat, .tracePanel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.chatLog {
+  padding: 14px;
+  overflow: auto;
+  flex: 1;
+}
+
+.msg {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--msg-bg);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.msg.user { background: var(--msg-user-bg); }
+.msg.assistant { background: var(--msg-assistant-bg); }
+
+.msgHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.composer {
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid var(--border);
+  background: var(--panel2);
+}
+
+.spinner {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+}
+
+.spinner.hidden {
+  display: none;
+}
+
+.spinner .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0.35;
+  animation: dotPulse 1s infinite ease-in-out;
+}
+
+.spinner .dot:nth-child(2) { animation-delay: 0.15s; }
+.spinner .dot:nth-child(3) { animation-delay: 0.30s; }
+
+@keyframes dotPulse {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.25; }
+  40% { transform: translateY(-3px); opacity: 0.85; }
+}
+.chatInput {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+  outline: none;
+}
+
+.btn {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--btn-bg);
+  color: var(--text);
+  cursor: pointer;
+}
+.btn:hover { filter: brightness(1.05); }
+.btn.primary { background: var(--primary-bg); }
+.btn.small { padding: 8px 10px; font-size: 12px; }
+
+.quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid var(--border);
+  background: var(--panel2);
+}
+
+.traceHeader {
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel2);
+}
+.traceTitle { font-weight: 700; }
+.traceHint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.traceOutput {
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  flex: 1;
+  background: var(--trace-bg);
+  color: var(--trace-text);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.hidden { display: none !important; }
+
+.actionRow { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+.actionHint { color: var(--muted); font-size: 12px; margin-top: 6px; }
