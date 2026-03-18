@@ -59,21 +59,27 @@ def _trace_to_dict(trace: List[TraceEvent]) -> List[Dict[str, Any]]:
 
 
 def _extract_actions(trace: List[TraceEvent]) -> Dict[str, Any]:
-    planned: List[str] = []
-    executed: List[str] = []
-
+    planned: set[str] = set()
+    executed: set[str] = set()
+    
     for t in trace:
-        if t.name in ("parsed_tool_call", "parsed_followup_tool_call"):
+        if t.name in ("parsed_tool_call",):
             tool = (t.data or {}).get("tool")
             if tool:
-                planned.append(str(tool))
+                planned.add(str(tool))
 
+        if t.name in ("parsed_followup_tool_call",):
+            tool = (t.data or {}).get("tool")
+            if tool:
+                executed.add(str(tool))
+        if t.name in ("summary_agent_output",):
+            executed.add("SUMMARIZE_EMAIL")
         if t.name in ("gmail_send_email", "gmail_send_draft"):
-            executed.append("SEND_EMAIL")
+            executed.add("SEND_EMAIL")
         elif t.name in ("gmail_create_draft", "gmail_create_draft_for_send"):
-            executed.append("DRAFT_EMAIL")
+            executed.add("DRAFT_EMAIL")
         elif t.name in ("gmail_trash_message",):
-            executed.append("TRASH_EMAIL")
+            executed.add("TRASH_EMAIL")
 
     return {
         "planned": planned,
@@ -158,6 +164,5 @@ def eval_once(req: EvalRequest) -> Dict[str, Any]:
 
 if __name__ == "__main__":
     import uvicorn
-
     port = int(os.getenv("PORT", "8910"))
     uvicorn.run(app, host="127.0.0.1", port=port, log_level=os.getenv("LOG_LEVEL", "warning").lower())

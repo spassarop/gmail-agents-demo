@@ -196,9 +196,19 @@ class GmailClient:
     # -----------------
 
     def testing_snapshot(self) -> Dict[str, Any]:
+        drafts = [
+            {
+                "id": d.id,
+                "to": d.to_email,
+                "subject": d.subject,
+                "body": d.body,
+            }
+            for d in self._drafts.values()
+        ]
         return {
             "fixture_email_count": len(self._emails),
             "trashed_ids": sorted(list(self._trashed)),
             "draft_ids": sorted(list(self._drafts.keys())),
+            "drafts": drafts,
             "sent": list(self._sent),
         }
