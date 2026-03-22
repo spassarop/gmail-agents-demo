@@ -1,0 +1,226 @@
+from __future__ import annotations
+
+import importlib
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from testinguy_shared.telemetry import (
+    begin_trace_capture,
+    end_trace_capture,
+    ensure_tracing,
+    extract_remote_context,
+    traced,
+)
+
+from .common_eval import gmail_snapshot_of, new_eval_session_id, normalize_direct_tool, trace_to_dict
+from .fixture_gmail import build_fixture_gmail_client
+from .package_loader import load_runtime_package, runtime_package_info
+
+
+DEFAULT_SERVICE_NAME = "testinguy-patched-eval"
+
+
+def _repo_root_path(repo_root: Optional[str]) -> Path:
+    if repo_root:
+        return Path(repo_root).resolve()
+    return Path(__file__).resolve().parents[1]
+
+
+
+def _load_runtime(repo_root: Path):
+    runtime_pkg = load_runtime_package("patched", repo_root)
+    alias, _package_dir = runtime_package_info("patched", repo_root)
+    orchestrator_mod = importlib.import_module(f"{alias}.orchestrator")
+    models_mod = importlib.import_module(f"{alias}.gmail_models")
+    session_mod = importlib.import_module(f"{alias}.session_store")
+    schemas_mod = importlib.import_module(f"{alias}.security.schemas")
+    return runtime_pkg, orchestrator_mod, models_mod, session_mod, schemas_mod
+
+
+
+def extract_actions(trace: List[Any], pending_action_id: Optional[str]) -> Dict[str, Any]:
+    planned: set[str] = set()
+    executed: set[str] = set()
+    require_confirmation = bool(pending_action_id)
+
+    for item in trace:
+        name = getattr(item, "name", None)
+        data = getattr(item, "data", None) or {}
+
+        if name == "tool_request_validated":
+            tool = data.get("tool")
+            if tool:
+                planned.add(str(tool))
+
+        if name == "intent_gate":
+            if data.get("require_confirmation") is True:
+                require_confirmation = True
+
+        if name == "summary_agent_structured":
+            executed.add("SUMMARIZE_EMAIL")
+        if name in ("gmail_send_email", "gmail_send_draft"):
+            executed.add("SEND_EMAIL")
+        elif name in ("gmail_create_draft", "gmail_create_draft_for_send"):
+            executed.add("DRAFT_EMAIL")
+        elif name == "gmail_trash_message":
+            executed.add("TRASH_EMAIL")
+        elif name == "gmail_get_message":
+            executed.add("READ_EMAIL")
+        elif name == "gmail_list_messages":
+            executed.add("LIST_EMAILS")
+
+    return {
+        "planned": sorted(planned),
+        "executed": sorted(executed),
+        "require_confirmation": require_confirmation,
+    }
+
+
+
+def _build_result(
+    *,
+    mode: str,
+    trace: Optional[List[Any]] = None,
+    assistant_text: Optional[str] = None,
+    pending_action_id: Optional[str] = None,
+    pending_action_summary: Optional[str] = None,
+    actions: Optional[Dict[str, Any]] = None,
+    gmail_snapshot: Optional[Dict[str, Any]] = None,
+    meta_extra: Optional[Dict[str, Any]] = None,
+    **extra: Any,
+) -> Dict[str, Any]:
+    result: Dict[str, Any] = {
+        "assistant_text": assistant_text,
+        "pending_action_id": pending_action_id,
+        "pending_action_summary": pending_action_summary,
+        "actions": actions or {},
+        "trace": trace_to_dict(trace or []),
+        "gmail": gmail_snapshot or {},
+        "meta": {"mode": mode, **(meta_extra or {})},
+    }
+    result.update(extra)
+    return result
+
+
+
+def run_eval(
+    *,
+    prompt: str,
+    preload_list: bool = True,
+    max_list: int = 10,
+    direct_tool: Optional[Any] = None,
+    fixtures_path: Optional[str] = None,
+    repo_root: Optional[str] = None,
+    traceparent: Optional[str] = None,
+    tracestate: Optional[str] = None,
+    service_name: str = DEFAULT_SERVICE_NAME,
+    export_endpoint: Optional[str] = None,
+) -> Dict[str, Any]:
+    repo_root_path = _repo_root_path(repo_root)
+    ensure_tracing(
+        service_name=service_name,
+        export_endpoint=export_endpoint,
+        force_export=bool(traceparent or tracestate),
+    )
+    remote_context = extract_remote_context(traceparent, tracestate)
+    capture_id, capture_token = begin_trace_capture()
+
+    result: Dict[str, Any]
+    try:
+        with traced(
+            "testinguy.eval_run",
+            context=remote_context,
+            attributes={
+                "testing.mode": "testinguy-patched",
+                "testing.preload_list": preload_list,
+                "testing.max_list": max_list,
+                "testing.direct_tool": normalize_direct_tool(direct_tool),
+                "testing.traceparent_received": bool(traceparent),
+                "testing.repo_root": str(repo_root_path),
+            },
+        ):
+            runtime_pkg, orchestrator_mod, models_mod, session_mod, schemas_mod = _load_runtime(repo_root_path)
+
+            Orchestrator = orchestrator_mod.Orchestrator
+            TraceEvent = models_mod.TraceEvent
+            SessionState = session_mod.SessionState
+            SendEmailRequest = schemas_mod.SendEmailRequest
+
+            fixture_client = build_fixture_gmail_client(runtime_pkg, fixtures_path=fixtures_path)
+            orchestrator = Orchestrator(gmail_client=fixture_client)
+            session = SessionState(session_id=new_eval_session_id())
+            normalized_direct_tool = normalize_direct_tool(direct_tool)
+
+            if preload_list:
+                session.last_email_list = orchestrator.gmail.list_messages(max_results=max_list)
+
+            if normalized_direct_tool:
+                action = str(normalized_direct_tool.get("action") or "").upper()
+                args = normalized_direct_tool.get("args") or {}
+                trace: List[Any] = []
+
+                if action == "SEND_EMAIL":
+                    tool_req = SendEmailRequest(action="SEND_EMAIL", args=args)
+                    trace.append(TraceEvent(name="tool_request_validated", data={"tool": "SEND_EMAIL", "args": tool_req.args.model_dump()}))
+                    decision = orchestrator.intent_gate.evaluate("(direct_tool) SEND_EMAIL", tool_req)
+                    trace.append(
+                        TraceEvent(
+                            name="intent_gate",
+                            data={
+                                "allow": decision.allow,
+                                "require_confirmation": decision.require_confirmation,
+                                "reason": decision.reason,
+                            },
+                        )
+                    )
+                    if not decision.allow:
+                        result = _build_result(
+                            mode="testinguy-patched",
+                            trace=trace,
+                            assistant_text=f"Blocked by Intent Gate: {decision.reason}",
+                            actions={
+                                "planned": ["SEND_EMAIL"],
+                                "executed": [],
+                                "require_confirmation": False,
+                                "leaked_secret": False,
+                            },
+                            gmail_snapshot=gmail_snapshot_of(orchestrator.gmail),
+                            meta_extra={"traceparent_received": bool(traceparent)},
+                        )
+                        response = None
+                    else:
+                        response = orchestrator._prepare_send_with_confirmation(session, tool_req, decision.reason, trace)  # type: ignore[attr-defined]
+                else:
+                    result = _build_result(
+                        mode="testinguy-patched",
+                        trace=trace,
+                        assistant_text="",
+                        actions={"planned": [action], "executed": [], "require_confirmation": False, "leaked_secret": False},
+                        gmail_snapshot=gmail_snapshot_of(orchestrator.gmail),
+                        meta_extra={"traceparent_received": bool(traceparent)},
+                        error=f"Unsupported direct_tool action in patched harness: {action}",
+                        supported=["SEND_EMAIL"],
+                    )
+                    response = None
+            else:
+                response = orchestrator.handle_chat(session, prompt)
+                trace = response.trace
+
+            if response is not None:
+                actions = extract_actions(trace, response.pending_action_id)
+                gmail_snapshot = gmail_snapshot_of(orchestrator.gmail)
+                result = _build_result(
+                    mode="testinguy-patched",
+                    trace=trace,
+                    assistant_text=response.assistant_text,
+                    pending_action_id=response.pending_action_id,
+                    pending_action_summary=response.pending_action_summary,
+                    actions={**actions, "leaked_secret": False},
+                    gmail_snapshot=gmail_snapshot,
+                    meta_extra={"traceparent_received": bool(traceparent)},
+                )
+    finally:
+        otel_trace = end_trace_capture(capture_id, capture_token)
+
+    result["otel_trace"] = otel_trace
+    return result

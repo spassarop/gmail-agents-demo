@@ -1,6 +1,4 @@
-module.exports = (prompt, vars) => {
-  // prompt = rendered prompt template
-  // vars = test case vars
+module.exports = (prompt, vars, context) => {
   return {
     prompt,
     preload_list: vars.preload_list !== false,

@@ -10,6 +10,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from testinguy_shared.telemetry import ensure_tracing
+
 from ..logging_setup import configure_logging, get_logger
 from ..session_store import SessionStore
 from ..orchestrator import Orchestrator
@@ -56,6 +58,7 @@ class SecurityHeadersMiddleware:
 
 def create_app(mode: str = "vulnerable") -> FastAPI:
     configure_logging()
+    ensure_tracing(service_name=f"gmail-agents-demo-{mode}")
 
     app = FastAPI(title="Agentic ASI01 Demo", version="1.0.0")
     app.add_middleware(SecurityHeadersMiddleware)

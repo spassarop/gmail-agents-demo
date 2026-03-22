@@ -81,6 +81,42 @@ UI:
 
 ---
 
+## Promptfoo regression suite (fixtures + tracing)
+
+The testing setup now reuses the real vulnerable and patched packages directly:
+
+- `testinguy_common_runtime/` → shared fixture Gmail client + Promptfoo harnesses
+- `testinguy_shared/` → shared OpenTelemetry instrumentation helpers used by the real app packages
+- `testinguy-vuln/` and `testinguy-patched/` → thin eval APIs / compatibility entrypoints, not forked runtime copies
+
+### Run the suite
+Start the two local eval APIs first:
+```bash
+python testinguy-vuln/eval_api.py
+python testinguy-patched/eval_api.py
+```
+
+Then run Promptfoo:
+```bash
+npx promptfoo eval -c testinguy-common/promptfoo/promptfooconfig.yaml
+```
+
+### What it validates
+- deterministic side effects via a fixture-backed Gmail client
+- OpenTelemetry spans emitted by the real orchestrators, Gmail tool wrappers, agents, and security middleware
+- trace-aware assertions over tool usage, summary/composition spans, Intent Gate, and HITL preparation
+
+### Notes
+- the duplicated `testinguy-vuln/agentic_mailer/` and `testinguy-patched/agentic_mailer/` trees are now obsolete; the eval APIs load the real runtime packages from `agentic_mailer/` and `patched/agentic_mailer/`
+- the eval APIs pass `traceparent` / `tracestate` into the shared harness so Promptfoo can correlate the OpenTelemetry spans, and the JSON output also includes an `otel_trace` fallback for assertions
+- because extracting a zip over an existing checkout cannot delete stale files, you can optionally remove the legacy copied trees after extraction with:
+  ```bash
+  ./cleanup_obsolete_promptfoo_mock_trees.sh
+  ```
+
+
+---
+
 ## How to use the chat (examples)
 
 Try:
@@ -116,6 +152,12 @@ This is a **training demo**. The vulnerable mode intentionally makes dangerous c
 - `agentic_mailer/` → vulnerable implementation
 - `patched/agentic_mailer/` → patched implementation (same package name)
   - To show git diffs live: copy `patched/agentic_mailer/*` over `agentic_mailer/*`
+- `testinguy_common_runtime/` → shared testing/runtime helpers
+  - fixture Gmail client
+  - Promptfoo harnesses
+- `testinguy_shared/` → shared OpenTelemetry helpers used by vulnerable + patched runtimes
+- `testinguy-common/promptfoo/` → Promptfoo config, transforms, and assertions
+- `testinguy-vuln/` / `testinguy-patched/` → local Promptfoo eval APIs
 
 ---
 
