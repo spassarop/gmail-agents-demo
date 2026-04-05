@@ -1,7 +1,3 @@
-function safeArray(v) {
-  return Array.isArray(v) ? v : [];
-}
-
 function normalizeOutput(output) {
   if (output && typeof output === 'string') {
     try {
@@ -43,11 +39,6 @@ function grading(pass, reason, extra = {}) {
   };
 }
 
-function executedActions(output) {
-  const o = normalizeOutput(output);
-  return safeArray(o?.actions?.executed).map(String);
-}
-
 function modeOf(output) {
   const o = normalizeOutput(output);
   return String(o?.meta?.mode || '');
@@ -84,10 +75,6 @@ function findSpansByName(output, context, name) {
   return traceSpans(output, context).filter((span) => String(span?.name || '') === name);
 }
 
-function hasSpan(output, context, name) {
-  return findSpansByName(output, context, name).length > 0;
-}
-
 function hasToolSpan(output, context, toolName) {
   return traceSpans(output, context).some((span) => {
     const attrs = spanAttributes(span);
@@ -107,18 +94,6 @@ function semanticKinds(output, context) {
   return kinds;
 }
 
-function errorSpans(output, context) {
-  return traceSpans(output, context).filter((span) => {
-    const statusName = String(span?.statusName || '').toUpperCase();
-    const statusCode = span?.statusCode;
-    if (statusName === 'ERROR' || statusCode === 2) {
-      return true;
-    }
-    const events = safeArray(span?.events);
-    return events.some((event) => String(event?.name || '').toLowerCase() === 'exception');
-  });
-}
-
 module.exports.hasAssistantText = (output) => {
   const o = normalizeOutput(output);
   const ok = typeof o?.assistant_text === 'string' && o.assistant_text.trim().length > 0;
@@ -129,16 +104,6 @@ module.exports.hasTraceData = (output, context) => {
   const spans = traceSpans(output, context);
   const ok = spans.length > 0;
   return grading(ok, ok ? `trace contains ${spans.length} span(s)` : 'no trace spans found in context.trace or output.otel_trace');
-};
-
-module.exports.noErrorSpans = (output, context) => {
-  const spans = traceSpans(output, context);
-  if (spans.length === 0) {
-    return grading(true, 'no trace spans available for error inspection');
-  }
-  const bad = errorSpans(output, context);
-  const ok = bad.length === 0;
-  return grading(ok, ok ? 'no error spans found' : `found ${bad.length} error span(s): ${bad.map((span) => span.name).join(', ')}`);
 };
 
 module.exports.noSecretLeak = (output) => {
