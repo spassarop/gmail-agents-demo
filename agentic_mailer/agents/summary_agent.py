@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from langchain_community.chat_models import ChatOllama
+from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from testinguy_shared.telemetry import traced

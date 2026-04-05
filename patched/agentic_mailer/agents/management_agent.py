@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Optional, Tuple
 
-from langchain_community.chat_models import ChatOllama
+from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import TypeAdapter
 
