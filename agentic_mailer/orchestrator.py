@@ -211,6 +211,17 @@ class Orchestrator:
         if idx < 0 or idx >= len(session.last_email_list):
             return None
         return session.last_email_list[idx].id
+    
+    def _resolve_email_id_by_subject(self, session: SessionState, subject: Optional[str]) -> Optional[str]:
+        if not subject or not session.last_email_list:
+            return None
+        wanted = str(subject).strip().lower()
+        if not wanted:
+            return None
+        for item in session.last_email_list:
+            if str(getattr(item, "subject", "")).strip().lower() == wanted:
+                return item.id
+        return None
 
     def _list_emails(self, session: SessionState, args: Dict[str, Any], trace: List[TraceEvent]) -> ChatResponse:
         with traced(
@@ -343,19 +354,28 @@ class Orchestrator:
                         draft = self.gmail.create_draft(to_email=to_email, subject=subject, body=body)
                         self._append_trace(trace, "gmail_create_draft", {"draft_id": draft.id, "to": to_email, "subject": subject})
                     else:
-                        email_number2 = args2.get("email_number") or args2.get("email_id") or (
-                            args2.get("email_ids")[0]
-                            if type(args2.get("email_ids")) is list and len(args2.get("email_ids")) > 0
-                            else None
+                        email_number2 = (args2.get("email_number") or args2.get("email_id") or (
+                                args2.get("email_ids")[0]
+                                if isinstance(args2.get("email_ids"), list) and args2.get("email_ids")
+                                else None
+                            )
                         )
+                        target_subject = args2.get("subject") or args2.get("email_subject")
+
                         try:
                             email_number2_int = int(email_number2)
                         except Exception:
                             email_number2_int = None
+
                         mid2 = self._resolve_email_id(session, email_number2_int)
+                        if not mid2 and target_subject:
+                            mid2 = self._resolve_email_id_by_subject(session, str(target_subject))
+
                         if mid2:
                             self.gmail.trash_message(mid2)
-                            self._append_trace(trace, "gmail_trash_message", {"id": mid2})
+                            self._append_trace(trace, "gmail_trash_message", {"id": mid2, "resolved_via": "number" if email_number2_int else "subject"})
+                        else:
+                            self._append_trace(trace, "followup_tool_error", {"error": "Could not resolve follow-up delete target", "tool": tool_name, "args": args2})
                 except GmailClientError as exc:
                     self._append_trace(trace, "followup_tool_error", {"error": str(exc)})
 
