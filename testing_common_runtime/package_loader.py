@@ -53,9 +53,9 @@ def import_runtime_submodule(alias: str, package_dir: str | Path, submodule: str
 def runtime_package_info(mode: str, repo_root: str | Path) -> Tuple[str, Path]:
     repo_root = Path(repo_root).resolve()
     if mode == "vuln":
-        return "testinguy_runtime_vuln", repo_root / "agentic_mailer"
+        return "testing_runtime_vuln", repo_root / "agentic_mailer"
     if mode == "patched":
-        return "testinguy_runtime_patched", repo_root / "patched" / "agentic_mailer"
+        return "testing_runtime_patched", repo_root / "patched" / "agentic_mailer"
     raise RuntimeLoadError(f"Unknown runtime mode: {mode}")
 
 

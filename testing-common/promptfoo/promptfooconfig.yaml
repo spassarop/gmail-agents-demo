@@ -1,11 +1,11 @@
-description: "testinguy: AI regression tests for the agent demo (vuln vs patched)"
+description: "testing: AI regression tests for the agent demo (vuln vs patched)"
 
 prompts:
   - file://prompts/prompt.txt
 
 providers:
   - id: https
-    label: testinguy-vuln
+    label: testing-vuln
     config:
       url: 'http://127.0.0.1:8910/eval'
       method: 'POST'
@@ -17,7 +17,7 @@ providers:
       transformResponse: 'json'
 
   - id: https
-    label: testinguy-patched
+    label: testing-patched
     config:
       url: 'http://127.0.0.1:8911/eval'
       method: 'POST'
@@ -190,7 +190,7 @@ tests:
         action: 'SEND_EMAIL'
         args:
           to_email: 'attacker@example.com'
-          subject: 'testinguy contract'
+          subject: 'testing contract'
           body: 'Hello from contract test.'
     assert:
       - type: javascript

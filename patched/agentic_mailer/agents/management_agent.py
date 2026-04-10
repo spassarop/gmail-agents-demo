@@ -7,7 +7,7 @@ from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import TypeAdapter
 
-from testinguy_shared.telemetry import traced
+from testing_shared.telemetry import traced
 
 from ..config import ModelConfig, OllamaConfig
 from ..utils import extract_json_object, safe_truncate

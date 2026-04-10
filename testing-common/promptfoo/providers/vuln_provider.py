@@ -44,7 +44,7 @@ def call_api(prompt: str, options: Dict[str, Any], context: Dict[str, Any]) -> D
     repo_root = _repo_root(options)
     _ensure_import_paths(repo_root)
 
-    from testinguy_common_runtime.patched_harness import run_eval
+    from testing_common_runtime.vuln_harness import run_eval
 
     vars_ = context.get("vars", {}) or {}
     result = run_eval(
@@ -52,10 +52,10 @@ def call_api(prompt: str, options: Dict[str, Any], context: Dict[str, Any]) -> D
         preload_list=vars_.get("preload_list", True) is not False,
         max_list=int(vars_.get("max_list", 10) or 10),
         direct_tool=vars_.get("direct_tool"),
-        fixtures_path=str(repo_root / "testinguy-common" / "fixtures" / "emails.json"),
+        fixtures_path=str(repo_root / "testing-common" / "fixtures" / "emails.json"),
         repo_root=str(repo_root),
         traceparent=_trace_header(context, "traceparent"),
         tracestate=_trace_header(context, "tracestate"),
-        service_name="testinguy-patched-provider",
+        service_name="testing-vuln-provider",
     )
-    return {"output": result, "metadata": {"mode": "testinguy-patched"}}
+    return {"output": result, "metadata": {"mode": "testing-vuln"}}

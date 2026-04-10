@@ -42,7 +42,7 @@ class FixtureGmailClient:
         self.secrets_dir = Path(secrets_dir)
         self.fixtures_path = Path(
             fixtures_path
-            or os.getenv("TESTINGUY_FIXTURES_PATH", "testinguy-common/fixtures/emails.json")
+            or os.getenv("testing_FIXTURES_PATH", "testing-common/fixtures/emails.json")
         )
 
         self._emails: List[Dict[str, Any]] = []
@@ -76,7 +76,7 @@ class FixtureGmailClient:
         if not self.fixtures_path.exists():
             raise self._error(
                 f"Fixture file not found: {self.fixtures_path}. "
-                f"Create it (see testinguy-common/fixtures/emails.json)."
+                f"Create it (see testing-common/fixtures/emails.json)."
             )
 
         try:

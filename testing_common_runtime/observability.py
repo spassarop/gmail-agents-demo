@@ -3,14 +3,14 @@ from __future__ import annotations
 """Compatibility wrappers around the shared OpenTelemetry helpers.
 
 This module previously contained a standalone tracing implementation. The demo
-now standardizes on `testinguy_shared.telemetry`; these helpers remain only so
+now standardizes on `testing_shared.telemetry`; these helpers remain only so
 older local scripts can keep importing the same names during the transition.
 """
 
 from contextlib import contextmanager
 from typing import Any, Dict, Iterator, Mapping, Optional
 
-from testinguy_shared.telemetry import traced
+from testing_shared.telemetry import traced
 
 SERVICE_TRACER_NAME = "gmail-agents-demo"
 

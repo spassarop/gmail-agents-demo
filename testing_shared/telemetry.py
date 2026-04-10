@@ -44,7 +44,7 @@ _TRACING_CONFIGURED = False
 _TRACER_PROVIDER = None
 _OTLP_EXPORTER_ENABLED = False
 _CAPTURE_LOCK = threading.Lock()
-_CAPTURE_ID: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("testinguy_capture_id", default=None)
+_CAPTURE_ID: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("testing_capture_id", default=None)
 _CAPTURES: Dict[str, list[dict[str, Any]]] = {}
 
 
@@ -222,7 +222,7 @@ def traced(
     attributes: Optional[Mapping[str, Any]] = None,
     context: Any = None,
     kind: Any = None,
-    tracer_name: str = "testinguy.agentic_demo",
+    tracer_name: str = "testing.agentic_demo",
 ):
     """Create a traced span when OpenTelemetry is available.
 

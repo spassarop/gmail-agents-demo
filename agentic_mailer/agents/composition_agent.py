@@ -5,7 +5,7 @@ import logging
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from testinguy_shared.telemetry import traced
+from testing_shared.telemetry import traced
 
 from ..config import ModelConfig, OllamaConfig
 from ..gmail_models import EmailMessage

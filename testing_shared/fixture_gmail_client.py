@@ -3,7 +3,7 @@ from __future__ import annotations
 """Compatibility shim for the shared fixture Gmail client.
 
 The canonical fixture implementation now lives in
-`testinguy_common_runtime.fixture_gmail` so the Promptfoo/runtime harness can bind
+`testing_common_runtime.fixture_gmail` so the Promptfoo/runtime harness can bind
 it to the vulnerable or patched runtime model classes without cloning package
 folders.
 
@@ -13,7 +13,7 @@ implementation instead of maintaining a second mock client implementation.
 
 from typing import Any, Optional
 
-from testinguy_common_runtime.fixture_gmail import (
+from testing_common_runtime.fixture_gmail import (
     FixtureGmailClient as _CanonicalFixtureGmailClient,
     build_fixture_gmail_client,
 )
@@ -28,7 +28,7 @@ except Exception:  # pragma: no cover - graceful fallback
 class FixtureGmailClient(_CanonicalFixtureGmailClient):
     """Backward-compatible fixture client bound to the vulnerable model classes.
 
-    New code should prefer `testinguy_common_runtime.build_fixture_gmail_client`
+    New code should prefer `testing_common_runtime.build_fixture_gmail_client`
     so the correct runtime-specific Pydantic models are injected explicitly.
     """
 

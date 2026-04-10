@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any, List, Optional
 
-from testinguy_shared.telemetry import add_current_event, instrument_gmail_client, traced
+from testing_shared.telemetry import add_current_event, instrument_gmail_client, traced
 
 from .config import ModelConfig, OllamaConfig
 try:

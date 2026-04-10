@@ -7,7 +7,7 @@ from langchain_ollama import ChatOllama
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from testinguy_shared.telemetry import traced
+from testing_shared.telemetry import traced
 
 from ..config import DemoConfig, ModelConfig, OllamaConfig
 from ..utils import safe_truncate

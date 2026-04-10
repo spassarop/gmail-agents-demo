@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from testinguy_shared.telemetry import ensure_tracing
+from testing_shared.telemetry import ensure_tracing
 
 from ..logging_setup import configure_logging, get_logger
 from ..session_store import SessionStore

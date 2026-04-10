@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from testinguy_shared.telemetry import traced
+from testing_shared.telemetry import traced
 
 from ..session_store import PendingAction, SessionState
 

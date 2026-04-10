@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from testinguy_shared.telemetry import traced
+from testing_shared.telemetry import traced
 
 from .schemas import ToolRequest, SendEmailRequest, TrashEmailRequest
 

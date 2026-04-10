@@ -15,9 +15,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from testinguy_common_runtime.patched_harness import run_eval
+from testing_common_runtime.vuln_harness import run_eval
 
-app = FastAPI(title="testinguy-patched eval api", version="2.1")
+app = FastAPI(title="testing-vuln eval api", version="2.1")
 
 
 class EvalRequest(BaseModel):
@@ -45,16 +45,16 @@ def eval_once(req: EvalRequest, request: Request) -> Dict[str, Any]:
         preload_list=req.preload_list,
         max_list=req.max_list,
         direct_tool=req.direct_tool,
-        fixtures_path=str(PROJECT_ROOT / "testinguy-common" / "fixtures" / "emails.json"),
+        fixtures_path=str(PROJECT_ROOT / "testing-common" / "fixtures" / "emails.json"),
         repo_root=str(PROJECT_ROOT),
         traceparent=request.headers.get("traceparent"),
         tracestate=request.headers.get("tracestate"),
-        service_name="testinguy-patched-eval",
+        service_name="testing-vuln-eval",
     )
 
 
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.getenv("PORT", "8911"))
+    port = int(os.getenv("PORT", "8910"))
     uvicorn.run(app, host="127.0.0.1", port=port, log_level=os.getenv("LOG_LEVEL", "warning").lower())

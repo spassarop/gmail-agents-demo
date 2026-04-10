@@ -4,7 +4,7 @@ import json
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from testinguy_shared.telemetry import add_current_event, instrument_gmail_client, traced
+from testing_shared.telemetry import add_current_event, instrument_gmail_client, traced
 
 from .config import DemoConfig, ModelConfig, OllamaConfig
 try:

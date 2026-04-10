@@ -4,7 +4,7 @@ import importlib
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from testinguy_shared.telemetry import (
+from testing_shared.telemetry import (
     begin_trace_capture,
     end_trace_capture,
     ensure_tracing,
@@ -12,12 +12,12 @@ from testinguy_shared.telemetry import (
     traced,
 )
 
-from .common_eval import gmail_snapshot_of, new_eval_session_id, normalize_direct_tool, trace_to_dict
+from .common_eval import detect_secret_leak, gmail_snapshot_of, new_eval_session_id, normalize_direct_tool, trace_to_dict
 from .fixture_gmail import build_fixture_gmail_client
 from .package_loader import load_runtime_package, runtime_package_info
 
 
-DEFAULT_SERVICE_NAME = "testinguy-patched-eval"
+DEFAULT_SERVICE_NAME = "testing-vuln-eval"
 
 
 def _repo_root_path(repo_root: Optional[str]) -> Path:
@@ -28,35 +28,34 @@ def _repo_root_path(repo_root: Optional[str]) -> Path:
 
 
 def _load_runtime(repo_root: Path):
-    runtime_pkg = load_runtime_package("patched", repo_root)
-    alias, _package_dir = runtime_package_info("patched", repo_root)
+    runtime_pkg = load_runtime_package("vuln", repo_root)
+    alias, _package_dir = runtime_package_info("vuln", repo_root)
     orchestrator_mod = importlib.import_module(f"{alias}.orchestrator")
     models_mod = importlib.import_module(f"{alias}.gmail_models")
     session_mod = importlib.import_module(f"{alias}.session_store")
-    schemas_mod = importlib.import_module(f"{alias}.security.schemas")
-    return runtime_pkg, orchestrator_mod, models_mod, session_mod, schemas_mod
+    config_mod = importlib.import_module(f"{alias}.config")
+    return runtime_pkg, orchestrator_mod, models_mod, session_mod, config_mod
 
 
 
-def extract_actions(trace: List[Any], pending_action_id: Optional[str]) -> Dict[str, Any]:
+def extract_actions(trace: List[Any]) -> Dict[str, Any]:
     planned: set[str] = set()
     executed: set[str] = set()
-    require_confirmation = bool(pending_action_id)
 
     for item in trace:
         name = getattr(item, "name", None)
         data = getattr(item, "data", None) or {}
 
-        if name == "tool_request_validated":
+        if name == "parsed_tool_call":
             tool = data.get("tool")
             if tool:
                 planned.add(str(tool))
 
-        if name == "intent_gate":
-            if data.get("require_confirmation") is True:
-                require_confirmation = True
-
-        if name == "summary_agent_structured":
+        if name == "parsed_followup_tool_call":
+            tool = data.get("tool")
+            if tool:
+                executed.add(str(tool))
+        if name == "summary_agent_output":
             executed.add("SUMMARIZE_EMAIL")
         if name in ("gmail_send_email", "gmail_send_draft"):
             executed.add("SEND_EMAIL")
@@ -69,11 +68,7 @@ def extract_actions(trace: List[Any], pending_action_id: Optional[str]) -> Dict[
         elif name == "gmail_list_messages":
             executed.add("LIST_EMAILS")
 
-    return {
-        "planned": sorted(planned),
-        "executed": sorted(executed),
-        "require_confirmation": require_confirmation,
-    }
+    return {"planned": sorted(planned), "executed": sorted(executed)}
 
 
 
@@ -128,10 +123,10 @@ def run_eval(
     result: Dict[str, Any]
     try:
         with traced(
-            "testinguy.eval_run",
+            "testing.eval_run",
             context=remote_context,
             attributes={
-                "testing.mode": "testinguy-patched",
+                "testing.mode": "testing-vuln",
                 "testing.preload_list": preload_list,
                 "testing.max_list": max_list,
                 "testing.direct_tool": normalize_direct_tool(direct_tool),
@@ -139,12 +134,12 @@ def run_eval(
                 "testing.repo_root": str(repo_root_path),
             },
         ):
-            runtime_pkg, orchestrator_mod, models_mod, session_mod, schemas_mod = _load_runtime(repo_root_path)
+            runtime_pkg, orchestrator_mod, models_mod, session_mod, config_mod = _load_runtime(repo_root_path)
 
             Orchestrator = orchestrator_mod.Orchestrator
             TraceEvent = models_mod.TraceEvent
             SessionState = session_mod.SessionState
-            SendEmailRequest = schemas_mod.SendEmailRequest
+            DemoConfig = config_mod.DemoConfig
 
             fixture_client = build_fixture_gmail_client(runtime_pkg, fixtures_path=fixtures_path)
             orchestrator = Orchestrator(gmail_client=fixture_client)
@@ -157,49 +152,22 @@ def run_eval(
             if normalized_direct_tool:
                 action = str(normalized_direct_tool.get("action") or "").upper()
                 args = normalized_direct_tool.get("args") or {}
-                trace: List[Any] = []
+                trace: List[Any] = [TraceEvent(name="parsed_tool_call", data={"tool": action, "args": args})]
 
                 if action == "SEND_EMAIL":
-                    tool_req = SendEmailRequest(action="SEND_EMAIL", args=args)
-                    trace.append(TraceEvent(name="tool_request_validated", data={"tool": "SEND_EMAIL", "args": tool_req.args.model_dump()}))
-                    decision = orchestrator.intent_gate.evaluate("(direct_tool) SEND_EMAIL", tool_req)
-                    trace.append(
-                        TraceEvent(
-                            name="intent_gate",
-                            data={
-                                "allow": decision.allow,
-                                "require_confirmation": decision.require_confirmation,
-                                "reason": decision.reason,
-                            },
-                        )
-                    )
-                    if not decision.allow:
-                        result = _build_result(
-                            mode="testinguy-patched",
-                            trace=trace,
-                            assistant_text=f"Blocked by Intent Gate: {decision.reason}",
-                            actions={
-                                "planned": ["SEND_EMAIL"],
-                                "executed": [],
-                                "require_confirmation": False,
-                                "leaked_secret": False,
-                            },
-                            gmail_snapshot=gmail_snapshot_of(orchestrator.gmail),
-                            meta_extra={"traceparent_received": bool(traceparent)},
-                        )
-                        response = None
-                    else:
-                        response = orchestrator._prepare_send_with_confirmation(session, tool_req, decision.reason, trace)  # type: ignore[attr-defined]
+                    response = orchestrator._send_email(session, args, trace)  # type: ignore[attr-defined]
+                elif action in ("TRASH_EMAIL", "DELETE_EMAIL"):
+                    response = orchestrator._delete_email(session, args, trace)  # type: ignore[attr-defined]
                 else:
                     result = _build_result(
-                        mode="testinguy-patched",
+                        mode="testing-vuln",
                         trace=trace,
                         assistant_text="",
-                        actions={"planned": [action], "executed": [], "require_confirmation": False, "leaked_secret": False},
+                        actions={"planned": [action], "executed": []},
                         gmail_snapshot=gmail_snapshot_of(orchestrator.gmail),
                         meta_extra={"traceparent_received": bool(traceparent)},
-                        error=f"Unsupported direct_tool action in patched harness: {action}",
-                        supported=["SEND_EMAIL"],
+                        error=f"Unsupported direct_tool action in vuln harness: {action}",
+                        supported=["SEND_EMAIL", "TRASH_EMAIL"],
                     )
                     response = None
             else:
@@ -207,15 +175,19 @@ def run_eval(
                 trace = response.trace
 
             if response is not None:
-                actions = extract_actions(trace, response.pending_action_id)
+                actions = extract_actions(trace)
                 gmail_snapshot = gmail_snapshot_of(orchestrator.gmail)
+
+                secret = DemoConfig().demo_password
+                leaked_secret = detect_secret_leak(secret, response.assistant_text, gmail_snapshot)
+
                 result = _build_result(
-                    mode="testinguy-patched",
+                    mode="testing-vuln",
                     trace=trace,
                     assistant_text=response.assistant_text,
                     pending_action_id=response.pending_action_id,
                     pending_action_summary=response.pending_action_summary,
-                    actions={**actions, "leaked_secret": False},
+                    actions={**actions, "leaked_secret": leaked_secret},
                     gmail_snapshot=gmail_snapshot,
                     meta_extra={"traceparent_received": bool(traceparent)},
                 )
