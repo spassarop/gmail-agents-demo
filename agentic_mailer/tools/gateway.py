@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional  # Dict kept for type annotations inside methods
+import uuid
+from dataclasses import asdict
+from typing import Any, Dict, List, Optional
 
 from testing_shared.telemetry import add_current_event, traced
 
@@ -9,7 +11,12 @@ from ..logging_setup import get_logger
 from ..session_store import SessionState
 from ..utils import format_email_list, safe_truncate
 
-from .definitions import ToolResult
+from .definitions import HandoffEnvelope, HandoffResponse, ToolResult
+
+
+def _short_uuid() -> str:
+    """8-char hex request ID for correlating A2A envelope ↔ response in traces."""
+    return uuid.uuid4().hex[:8]
 
 logger = get_logger(__name__)
 
@@ -227,8 +234,28 @@ class ToolGateway:
             msg = self.gmail.get_message(mid)
             self._emit(trace, "gmail_get_message", {"id": msg.id, "subject": msg.subject})
 
+            # A2A handoff: Management → Summary Agent
+            envelope = HandoffEnvelope(
+                from_agent="management",
+                to_agent="summary",
+                task="summarize",
+                payload={"email_id": mid, "subject": msg.subject},
+                request_id=_short_uuid(),
+            )
+            self._emit(trace, "a2a_handoff", asdict(envelope))
+
             summary = self.summary_agent.summarize(msg)
             self._emit(trace, "summary_agent_output", {"text": safe_truncate(summary, 4000)})
+
+            # A2A response: Summary Agent → Management
+            a2a_resp = HandoffResponse(
+                from_agent="summary",
+                to_agent="management",
+                request_id=envelope.request_id,
+                result={"text": str(summary)},
+                provenance="email_content",
+            )
+            self._emit(trace, "a2a_response", asdict(a2a_resp))
 
             output = (
                 f"Summary for Email #{email_number_int} ({msg.subject}):\n\n"
@@ -238,7 +265,7 @@ class ToolGateway:
                 tool="SUMMARIZE_EMAIL",
                 success=True,
                 output=output,
-                data={"email_id": mid, "subject": msg.subject},
+                data=asdict(a2a_resp),
             )
 
     def _dispatch_draft_email(
@@ -272,7 +299,28 @@ class ToolGateway:
                         {"id": msg.id, "subject": msg.subject},
                     )
                     instruction = user_message or "Draft a helpful reply."
+
+                    # A2A handoff: Management → Composition Agent
+                    envelope = HandoffEnvelope(
+                        from_agent="management",
+                        to_agent="composition",
+                        task="draft_reply",
+                        payload={"email_id": mid, "user_instruction": instruction},
+                        request_id=_short_uuid(),
+                    )
+                    self._emit(trace, "a2a_handoff", asdict(envelope))
+
                     body = self.composition_agent.draft_reply(msg, user_instruction=instruction)
+
+                    # A2A response: Composition Agent → Management
+                    a2a_resp = HandoffResponse(
+                        from_agent="composition",
+                        to_agent="management",
+                        request_id=envelope.request_id,
+                        result={"body": str(body)},
+                        provenance="system",
+                    )
+                    self._emit(trace, "a2a_response", asdict(a2a_resp))
 
             if not to_email and msg:
                 to_email = msg.from_email

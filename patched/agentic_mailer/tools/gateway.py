@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 import secrets
+import uuid
+from dataclasses import asdict
 from typing import Any, Dict, List, Optional
 
 from pydantic import TypeAdapter
@@ -24,7 +26,12 @@ from ..security.schemas import (
     ToolRequest,
 )
 
-from .definitions import ToolResult
+from .definitions import HandoffEnvelope, HandoffResponse, ToolResult
+
+
+def _short_uuid() -> str:
+    """8-char hex request ID for correlating A2A envelope ↔ response in traces."""
+    return uuid.uuid4().hex[:8]
 
 logger = get_logger(__name__)
 
@@ -388,12 +395,33 @@ class ToolGateway:
             sanitized_msg = msg.model_copy(
                 update={"body_text": sanitized_body, "body_html": sanitized_html}
             )
+
+            # A2A handoff: Management → Summary Agent
+            envelope = HandoffEnvelope(
+                from_agent="management",
+                to_agent="summary",
+                task="summarize",
+                payload={"email_id": mid, "subject": msg.subject},
+                request_id=_short_uuid(),
+            )
+            self._emit(trace, "a2a_handoff", asdict(envelope))
+
             summary = self.summary_agent.summarize(sanitized_msg)
             self._emit(trace, "summary_agent_structured", summary.model_dump())
 
             # Layer 3b — canary check on summary output.
             summary_text = summary.summary or ""
             self._check_canary(summary_text, trace)
+
+            # A2A response: Summary Agent → Management
+            a2a_resp = HandoffResponse(
+                from_agent="summary",
+                to_agent="management",
+                request_id=envelope.request_id,
+                result=summary.model_dump(),
+                provenance="email_content",
+            )
+            self._emit(trace, "a2a_response", asdict(a2a_resp))
 
             # Build user-facing output.
             extra = ""
@@ -421,7 +449,7 @@ class ToolGateway:
                 tool="SUMMARIZE_EMAIL",
                 success=True,
                 output=output,
-                data={"email_id": mid, "subject": msg.subject, "suspicious": summary.suspicious},
+                data=asdict(a2a_resp),
                 provenance="email_content",   # mark: downstream provenance guard will check this
             )
 
@@ -456,12 +484,34 @@ class ToolGateway:
                     "gmail_get_message_for_reply",
                     {"id": msg.id, "subject": msg.subject},
                 )
+
+                # A2A handoff: Management → Composition Agent
+                envelope = HandoffEnvelope(
+                    from_agent="management",
+                    to_agent="composition",
+                    task="draft_reply",
+                    payload={"email_id": mid, "user_instruction": user_message},
+                    request_id=_short_uuid(),
+                )
+                self._emit(trace, "a2a_handoff", asdict(envelope))
+
                 draft_obj = self.composition_agent.draft_reply(
                     msg,
                     user_instruction=user_message,
                     to_email=to_email or None,
                 )
                 self._emit(trace, "composition_agent_structured", draft_obj.model_dump())
+
+                # A2A response: Composition Agent → Management
+                a2a_resp = HandoffResponse(
+                    from_agent="composition",
+                    to_agent="management",
+                    request_id=envelope.request_id,
+                    result=draft_obj.model_dump(),
+                    provenance="system",
+                )
+                self._emit(trace, "a2a_response", asdict(a2a_resp))
+
                 to_email = to_email or draft_obj.to_email
                 subject = subject if subject != "(no subject)" else (
                     draft_obj.subject or f"Re: {msg.subject}"

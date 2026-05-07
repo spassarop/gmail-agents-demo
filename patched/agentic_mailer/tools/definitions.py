@@ -62,3 +62,54 @@ class ToolResult:
     require_confirmation: bool = False
     pending_action_id: Optional[str] = None
     pending_action_summary: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# A2A typed handoff messages — Stage 4
+# ---------------------------------------------------------------------------
+
+@dataclass
+class HandoffEnvelope:
+    """Sent by the gateway *before* calling a sub-agent.
+
+    The Management Agent decides what task to delegate and when; the gateway
+    wraps each sub-agent invocation in this envelope so the interaction is
+    fully observable in the trace.
+
+    Fields
+    ------
+    from_agent  : always "management" in the current architecture
+    to_agent    : "summary" | "composition"
+    task        : "summarize" | "draft_reply"
+    payload     : task-specific context (email_id, user_instruction, …)
+    request_id  : short hex string for correlating envelope ↔ response
+    """
+
+    from_agent: str
+    to_agent: str
+    task: str
+    payload: dict
+    request_id: str
+
+
+@dataclass
+class HandoffResponse:
+    """Returned by the gateway *after* a sub-agent completes.
+
+    Carries the structured result and provenance so the management agent
+    loop can inject it correctly (untrusted for summary, trusted for draft).
+
+    Fields
+    ------
+    from_agent  : "summary" | "composition"
+    to_agent    : "management"
+    request_id  : matches the corresponding HandoffEnvelope.request_id
+    result      : sub-agent output as a plain dict for JSON-safe tracing
+    provenance  : "email_content" for Summary Agent, "system" for Composition
+    """
+
+    from_agent: str
+    to_agent: str
+    request_id: str
+    result: dict
+    provenance: str
