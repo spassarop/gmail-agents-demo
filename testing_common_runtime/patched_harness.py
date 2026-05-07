@@ -39,83 +39,46 @@ def _load_runtime(repo_root: Path):
 
 
 def extract_actions(trace: List[Any], pending_action_id: Optional[str]) -> Dict[str, Any]:
-    """Extract factual planned/executed lists and defense signals from the trace.
+    """Return factual planned/executed tool lists — no verdicts, no defense signals.
 
-    Detects both Stage 3+ agent-loop events (tool_call, tool_result) and the
-    legacy Stage 1 orchestrator event (tool_request_validated) for graceful
-    backward compatibility.
+    Verdict computation lives in ``testing_common_runtime.verdicts``.
+    ``pending_action_id`` is kept as a parameter for API compatibility but is
+    no longer used here — the caller adds it to the result dict directly.
     """
-    planned: set[str] = set()
-    executed: set[str] = set()
-    require_confirmation = bool(pending_action_id)
-    blocked_by_provenance = False
-    blocked_by_gate = False
-    had_summarize = False
+    planned: set = set()
+    executed: set = set()
 
     for item in trace:
-        name = getattr(item, "name", None)
-        data = getattr(item, "data", None) or {}
+        name = getattr(item, "name", "") or ""
+        data = getattr(item, "data", {}) or {}
 
-        # ── Stage 3+ loop events ─────────────────────────────────────
-        if name == "tool_call":
-            # Emitted by ManagementAgent.run() before each gateway call
-            tool = data.get("tool", "")
-            if tool:
-                planned.add(str(tool))
-
+        # tool_result: agent loop emits this after every gateway call.
         if name == "tool_result":
-            # Emitted by ManagementAgent.run() after each gateway call.
-            # The gateway's own provenance-blocked tool_result event (emitted
-            # before the agent's tool_result) has blocked_by at top level.
-            if data.get("blocked_by") == "provenance_check":
-                blocked_by_provenance = True
-            # Also check nested data dict (agent wraps result.data here)
-            if data.get("data", {}).get("blocked_by") == "provenance_check":
-                blocked_by_provenance = True
+            t = data.get("tool", "")
+            if t:
+                planned.add(str(t))
 
-        if name == "heuristic_fallback":
-            tool = data.get("tool")
-            if tool:
-                planned.add(str(tool))
+        # a2a_response: sub-agent completed — from_agent identifies which.
+        if name == "a2a_response":
+            fa = data.get("from_agent", "")
+            if fa == "summary":
+                executed.add("SUMMARIZE_EMAIL")
+            elif fa == "composition":
+                executed.add("DRAFT_EMAIL")
 
-        # ── Legacy Stage 1 orchestrator event (backward compat) ──────
-        if name == "tool_request_validated":
-            tool = data.get("tool")
-            if tool:
-                planned.add(str(tool))
-
-        # ── Intent gate — emitted by gateway on every tool call ───────
-        if name == "intent_gate":
-            if data.get("require_confirmation") is True:
-                require_confirmation = True
-            if data.get("allow") is False:
-                blocked_by_gate = True
-
-        # ── Summary detection (both stages) ──────────────────────────
-        if name == "summary_agent_structured":
-            executed.add("SUMMARIZE_EMAIL")
-            had_summarize = True
-
-        # ── Gmail side-effect events ──────────────────────────────────
+        # Gmail side-effect events — ground truth for what actually executed.
         if name in ("gmail_send_email", "gmail_send_draft"):
             executed.add("SEND_EMAIL")
-        elif name in ("gmail_create_draft", "gmail_create_draft_for_send"):
+        if name in ("gmail_create_draft", "gmail_create_draft_for_send"):
             executed.add("DRAFT_EMAIL")
-        elif name == "gmail_trash_message":
+        if name == "gmail_trash_message":
             executed.add("TRASH_EMAIL")
-        elif name == "gmail_get_message":
+        if name == "gmail_get_message":
             executed.add("READ_EMAIL")
-        elif name == "gmail_list_messages":
+        if name == "gmail_list_messages":
             executed.add("LIST_EMAILS")
 
-    return {
-        "planned": sorted(planned),
-        "executed": sorted(executed),
-        "require_confirmation": require_confirmation,
-        "blocked_by_provenance": blocked_by_provenance,
-        "blocked_by_gate": blocked_by_gate,
-        "had_summarize": had_summarize,
-    }
+    return {"planned": sorted(planned), "executed": sorted(executed)}
 
 
 
@@ -220,24 +183,31 @@ def run_eval(
                             mode="testing-patched",
                             trace=trace,
                             assistant_text=f"Blocked by Intent Gate: {decision.reason}",
-                            actions={
-                                "planned": ["SEND_EMAIL"],
-                                "executed": [],
-                                "require_confirmation": False,
-                                "leaked_secret": False,
-                            },
+                            actions={"planned": ["SEND_EMAIL"], "executed": []},
                             gmail_snapshot=gmail_snapshot_of(orchestrator.gmail),
                             meta_extra={"traceparent_received": bool(traceparent)},
                         )
                         response = None
                     else:
-                        response = orchestrator._prepare_send_with_confirmation(session, tool_req, decision.reason, trace)  # type: ignore[attr-defined]
+                        # Route through gateway — _prepare_send_with_confirmation was
+                        # removed from the orchestrator in Stage 3; it now lives in
+                        # the gateway as _prepare_send_confirmation and is called
+                        # automatically when SEND_EMAIL passes the IntentGate.
+                        tool_result = orchestrator.gateway.execute(
+                            "SEND_EMAIL", args, session, trace,
+                            user_message="(direct_tool) SEND_EMAIL",
+                        )
+                        response = type("_R", (), {
+                            "assistant_text": tool_result.output,
+                            "pending_action_id": tool_result.pending_action_id,
+                            "pending_action_summary": tool_result.pending_action_summary,
+                        })()
                 else:
                     result = _build_result(
                         mode="testing-patched",
                         trace=trace,
                         assistant_text="",
-                        actions={"planned": [action], "executed": [], "require_confirmation": False, "leaked_secret": False},
+                        actions={"planned": [action], "executed": []},
                         gmail_snapshot=gmail_snapshot_of(orchestrator.gmail),
                         meta_extra={"traceparent_received": bool(traceparent)},
                         error=f"Unsupported direct_tool action in patched harness: {action}",
@@ -257,7 +227,7 @@ def run_eval(
                     assistant_text=response.assistant_text,
                     pending_action_id=response.pending_action_id,
                     pending_action_summary=response.pending_action_summary,
-                    actions={**actions, "leaked_secret": False},
+                    actions=actions,
                     gmail_snapshot=gmail_snapshot,
                     meta_extra={"traceparent_received": bool(traceparent)},
                 )

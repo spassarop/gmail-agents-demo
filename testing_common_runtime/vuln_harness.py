@@ -12,7 +12,7 @@ from testing_shared.telemetry import (
     traced,
 )
 
-from .common_eval import detect_secret_leak, gmail_snapshot_of, new_eval_session_id, normalize_direct_tool, trace_to_dict
+from .common_eval import gmail_snapshot_of, new_eval_session_id, normalize_direct_tool, trace_to_dict
 from .fixture_gmail import build_fixture_gmail_client
 from .package_loader import load_runtime_package, runtime_package_info
 
@@ -39,68 +39,45 @@ def _load_runtime(repo_root: Path):
 
 
 def extract_actions(trace: List[Any]) -> Dict[str, Any]:
-    """Extract factual planned/executed tool lists from the trace.
+    """Return factual planned/executed tool lists — no verdicts, no attack signals.
 
-    Detects events from both the Stage 2+ agent loop (tool_call, tool_result,
-    heuristic_fallback) and the legacy Stage 1 orchestrator events
-    (parsed_tool_call) for graceful backward compatibility.
+    Verdict computation lives in ``testing_common_runtime.verdicts``.
     """
-    planned: set[str] = set()
-    executed: set[str] = set()
-    had_summarize = False  # used by compute_test_verdicts (Stage 5) via callers
+    planned: set = set()
+    executed: set = set()
 
     for item in trace:
-        name = getattr(item, "name", None)
-        data = getattr(item, "data", None) or {}
+        name = getattr(item, "name", "") or ""
+        data = getattr(item, "data", {}) or {}
 
-        # ── Stage 2+ loop events ─────────────────────────────────────
-        if name == "tool_call":
-            # Emitted by ManagementAgent.run() before each gateway call
-            tool = data.get("tool", "")
-            if tool:
-                planned.add(str(tool))
-
+        # tool_result: agent loop emits this after every gateway call.
+        # data.tool is what the agent planned to call.
         if name == "tool_result":
-            # Emitted by ManagementAgent.run() after each gateway call
-            tool = data.get("tool", "")
-            if tool == "SUMMARIZE_EMAIL":
-                had_summarize = True
+            t = data.get("tool", "")
+            if t:
+                planned.add(str(t))
 
-        if name == "heuristic_fallback":
-            # Emitted when the model gave no tool call on turn 0
-            tool = data.get("tool")
-            if tool:
-                planned.add(str(tool))
+        # a2a_response: sub-agent completed — from_agent identifies which.
+        if name == "a2a_response":
+            fa = data.get("from_agent", "")
+            if fa == "summary":
+                executed.add("SUMMARIZE_EMAIL")
+            elif fa == "composition":
+                executed.add("DRAFT_EMAIL")
 
-        # ── Legacy Stage 1 orchestrator events (backward compat) ─────
-        if name == "parsed_tool_call":
-            tool = data.get("tool")
-            if tool:
-                planned.add(str(tool))
-
-        # summary_agent_output is still emitted by the gateway (both stages)
-        if name == "summary_agent_output":
-            had_summarize = True
-
-        # ── Gmail side-effect events (emitted by gateway, both stages) ─
+        # Gmail side-effect events — ground truth for what actually executed.
         if name in ("gmail_send_email", "gmail_send_draft"):
             executed.add("SEND_EMAIL")
-        elif name in ("gmail_create_draft", "gmail_create_draft_for_send"):
+        if name in ("gmail_create_draft", "gmail_create_draft_for_send"):
             executed.add("DRAFT_EMAIL")
-        elif name == "gmail_trash_message":
+        if name == "gmail_trash_message":
             executed.add("TRASH_EMAIL")
-        elif name == "gmail_get_message":
+        if name == "gmail_get_message":
             executed.add("READ_EMAIL")
-        elif name == "gmail_list_messages":
+        if name == "gmail_list_messages":
             executed.add("LIST_EMAILS")
 
-    return {
-        "planned": sorted(planned),
-        "executed": sorted(executed),
-        # had_summarize is a factual observation used by compute_test_verdicts
-        # (Stage 5); harness callers can include it or ignore it.
-        "had_summarize": had_summarize,
-    }
+    return {"planned": sorted(planned), "executed": sorted(executed)}
 
 
 
@@ -184,12 +161,16 @@ def run_eval(
             if normalized_direct_tool:
                 action = str(normalized_direct_tool.get("action") or "").upper()
                 args = normalized_direct_tool.get("args") or {}
-                trace: List[Any] = [TraceEvent(name="parsed_tool_call", data={"tool": action, "args": args})]
+                trace: List[Any] = []
 
-                if action == "SEND_EMAIL":
-                    response = orchestrator._send_email(session, args, trace)  # type: ignore[attr-defined]
-                elif action in ("TRASH_EMAIL", "DELETE_EMAIL"):
-                    response = orchestrator._delete_email(session, args, trace)  # type: ignore[attr-defined]
+                # Route through the gateway — all tool dispatch moved there in Stage 1.
+                if action in ("SEND_EMAIL", "TRASH_EMAIL", "DELETE_EMAIL"):
+                    tool_result = orchestrator.gateway.execute(action, args, session, trace)
+                    response = type("_R", (), {
+                        "assistant_text": tool_result.output,
+                        "pending_action_id": tool_result.pending_action_id,
+                        "pending_action_summary": tool_result.pending_action_summary,
+                    })()
                 else:
                     result = _build_result(
                         mode="testing-vuln",
@@ -209,9 +190,7 @@ def run_eval(
             if response is not None:
                 actions = extract_actions(trace)
                 gmail_snapshot = gmail_snapshot_of(orchestrator.gmail)
-
                 secret = DemoConfig().demo_password
-                leaked_secret = detect_secret_leak(secret, response.assistant_text, gmail_snapshot)
 
                 result = _build_result(
                     mode="testing-vuln",
@@ -219,9 +198,10 @@ def run_eval(
                     assistant_text=response.assistant_text,
                     pending_action_id=response.pending_action_id,
                     pending_action_summary=response.pending_action_summary,
-                    actions={**actions, "leaked_secret": leaked_secret},
+                    actions=actions,
                     gmail_snapshot=gmail_snapshot,
-                    meta_extra={"traceparent_received": bool(traceparent)},
+                    # demo_password in meta so compute_test_verdicts can check secret leaks
+                    meta_extra={"traceparent_received": bool(traceparent), "demo_password": secret},
                 )
     finally:
         otel_trace = end_trace_capture(capture_id, capture_token)
