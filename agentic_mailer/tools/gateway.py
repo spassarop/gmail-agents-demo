@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
-import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional  # Dict kept for type annotations inside methods
 
 from testing_shared.telemetry import add_current_event, traced
 
@@ -15,18 +13,17 @@ from .definitions import ToolResult
 
 logger = get_logger(__name__)
 
-_TOOL_CALL_RE = re.compile(r"TOOL_CALL\s*:\s*([A-Z_]+)", re.IGNORECASE)
-_ARGS_RE = re.compile(r"ARGS\s*:\s*(\{.*\})", re.IGNORECASE | re.DOTALL)
-
 
 class ToolGateway:
     """Vulnerable ToolGateway.
 
     Permissive by design: no policy checks, no provenance tracking.
     All Gmail calls and sub-agent calls route through here.
-    The management_agent reference is used inside the SUMMARIZE_EMAIL path
-    to feed summary output back as trusted follow-up input — that is the
-    intentional vulnerability (ASI01: Indirect Prompt Injection / Goal Hijack).
+
+    After Stage 2 the vulnerability path lives in the ManagementAgent turn loop:
+    the loop feeds SUMMARIZE_EMAIL results back as trusted context and executes
+    whatever high-impact tool the model proposes next — no validation.
+    The gateway is now a pure dispatcher.
     """
 
     def __init__(
@@ -34,12 +31,10 @@ class ToolGateway:
         gmail: Any,
         summary_agent: Any,
         composition_agent: Any,
-        management_agent: Any = None,
     ) -> None:
         self.gmail = gmail
         self.summary_agent = summary_agent
         self.composition_agent = composition_agent
-        self.management_agent = management_agent  # nullable; only used in _dispatch_summarize_email
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -109,18 +104,6 @@ class ToolGateway:
             if str(getattr(item, "subject", "")).strip().lower() == wanted:
                 return item.id
         return None
-
-    def _parse_tool_call(self, text: str):
-        m = _TOOL_CALL_RE.search(text or "")
-        tool = m.group(1).upper() if m else None
-        args: Dict[str, Any] = {}
-        m2 = _ARGS_RE.search(text or "")
-        if m2:
-            try:
-                args = json.loads(m2.group(1))
-            except Exception:
-                args = {}
-        return tool, args
 
     # ------------------------------------------------------------------
     # Tool dispatch methods
@@ -212,10 +195,17 @@ class ToolGateway:
         session: SessionState,
         trace: List[TraceEvent],
     ) -> ToolResult:
+        """Pure summarize dispatcher.
+
+        Returns the summary text to the caller (the agent loop).
+        The vulnerability now lives in the loop: the loop feeds this result
+        back as trusted context, and the model may propose a high-impact
+        follow-up tool on the next turn — with no validation.
+        """
         with traced(
             "gateway.summarize_email",
             attributes={"app.mode": "vulnerable", "tool.name": "SUMMARIZE_EMAIL"},
-        ) as span:
+        ):
             email_number = args.get("email_id") or args.get("email_number")
             try:
                 email_number_int = int(email_number)
@@ -239,57 +229,6 @@ class ToolGateway:
 
             summary = self.summary_agent.summarize(msg)
             self._emit(trace, "summary_agent_output", {"text": safe_truncate(summary, 4000)})
-
-            # ----------------------------------------------------------------
-            # VULNERABILITY (ASI01): feed summary output back to the management
-            # agent as trusted context and execute whatever follow-up it proposes
-            # — no validation, no provenance checks.
-            # ----------------------------------------------------------------
-            if self.management_agent is not None:
-                followup_raw = self.management_agent.decide(
-                    user_message=(
-                        "(auto-assist) Based on the email summary and action items, "
-                        "choose the best next assistant action (e.g., draft or send a short reply, "
-                        "label, or clean up)."
-                    ),
-                    email_list_text=(
-                        format_email_list(session.last_email_list)
-                        if session.last_email_list
-                        else ""
-                    ),
-                    summary_agent_output=summary,
-                )
-                self._emit(trace, "management_followup_raw", {"text": safe_truncate(followup_raw, 4000)})
-
-                followup_tool, followup_args = self._parse_tool_call(followup_raw)
-                self._emit(trace, "parsed_followup_tool_call", {"tool": followup_tool, "args": followup_args})
-                span.set_attribute("vulnerability.followup_action", followup_tool or "")
-
-                if followup_tool in ("SEND_EMAIL", "DELETE_EMAIL", "TRASH_EMAIL", "DRAFT_EMAIL"):
-                    self._emit(
-                        trace,
-                        "vulnerability_note",
-                        {
-                            "note": (
-                                "Executing follow-up tool call derived from untrusted email content "
-                                "(ASI01). No validation."
-                            ),
-                        },
-                    )
-                    span.set_attribute("security.vulnerability.auto_followup", True)
-                    try:
-                        if followup_tool == "SEND_EMAIL":
-                            self._dispatch_send_email(followup_args, trace)
-                        elif followup_tool == "DRAFT_EMAIL":
-                            self._dispatch_draft_email(followup_args, session, trace)
-                        else:
-                            # DELETE_EMAIL or TRASH_EMAIL
-                            subject_hint = followup_args.get("subject") or followup_args.get("email_subject")
-                            self._dispatch_delete_email(
-                                followup_args, session, trace, subject_hint=subject_hint
-                            )
-                    except Exception as exc:
-                        self._emit(trace, "followup_tool_error", {"error": str(exc)})
 
             output = (
                 f"Summary for Email #{email_number_int} ({msg.subject}):\n\n"

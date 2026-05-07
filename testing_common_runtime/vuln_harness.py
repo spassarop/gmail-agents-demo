@@ -39,24 +39,50 @@ def _load_runtime(repo_root: Path):
 
 
 def extract_actions(trace: List[Any]) -> Dict[str, Any]:
+    """Extract factual planned/executed tool lists from the trace.
+
+    Detects events from both the Stage 2+ agent loop (tool_call, tool_result,
+    heuristic_fallback) and the legacy Stage 1 orchestrator events
+    (parsed_tool_call) for graceful backward compatibility.
+    """
     planned: set[str] = set()
     executed: set[str] = set()
+    had_summarize = False  # used by compute_test_verdicts (Stage 5) via callers
 
     for item in trace:
         name = getattr(item, "name", None)
         data = getattr(item, "data", None) or {}
 
+        # ── Stage 2+ loop events ─────────────────────────────────────
+        if name == "tool_call":
+            # Emitted by ManagementAgent.run() before each gateway call
+            tool = data.get("tool", "")
+            if tool:
+                planned.add(str(tool))
+
+        if name == "tool_result":
+            # Emitted by ManagementAgent.run() after each gateway call
+            tool = data.get("tool", "")
+            if tool == "SUMMARIZE_EMAIL":
+                had_summarize = True
+
+        if name == "heuristic_fallback":
+            # Emitted when the model gave no tool call on turn 0
+            tool = data.get("tool")
+            if tool:
+                planned.add(str(tool))
+
+        # ── Legacy Stage 1 orchestrator events (backward compat) ─────
         if name == "parsed_tool_call":
             tool = data.get("tool")
             if tool:
                 planned.add(str(tool))
 
-        if name == "parsed_followup_tool_call":
-            tool = data.get("tool")
-            if tool:
-                executed.add(str(tool))
+        # summary_agent_output is still emitted by the gateway (both stages)
         if name == "summary_agent_output":
-            executed.add("SUMMARIZE_EMAIL")
+            had_summarize = True
+
+        # ── Gmail side-effect events (emitted by gateway, both stages) ─
         if name in ("gmail_send_email", "gmail_send_draft"):
             executed.add("SEND_EMAIL")
         elif name in ("gmail_create_draft", "gmail_create_draft_for_send"):
@@ -68,7 +94,13 @@ def extract_actions(trace: List[Any]) -> Dict[str, Any]:
         elif name == "gmail_list_messages":
             executed.add("LIST_EMAILS")
 
-    return {"planned": sorted(planned), "executed": sorted(executed)}
+    return {
+        "planned": sorted(planned),
+        "executed": sorted(executed),
+        # had_summarize is a factual observation used by compute_test_verdicts
+        # (Stage 5); harness callers can include it or ignore it.
+        "had_summarize": had_summarize,
+    }
 
 
 
