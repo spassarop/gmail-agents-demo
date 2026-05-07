@@ -39,25 +39,64 @@ def _load_runtime(repo_root: Path):
 
 
 def extract_actions(trace: List[Any], pending_action_id: Optional[str]) -> Dict[str, Any]:
+    """Extract factual planned/executed lists and defense signals from the trace.
+
+    Detects both Stage 3+ agent-loop events (tool_call, tool_result) and the
+    legacy Stage 1 orchestrator event (tool_request_validated) for graceful
+    backward compatibility.
+    """
     planned: set[str] = set()
     executed: set[str] = set()
     require_confirmation = bool(pending_action_id)
+    blocked_by_provenance = False
+    blocked_by_gate = False
+    had_summarize = False
 
     for item in trace:
         name = getattr(item, "name", None)
         data = getattr(item, "data", None) or {}
 
+        # ── Stage 3+ loop events ─────────────────────────────────────
+        if name == "tool_call":
+            # Emitted by ManagementAgent.run() before each gateway call
+            tool = data.get("tool", "")
+            if tool:
+                planned.add(str(tool))
+
+        if name == "tool_result":
+            # Emitted by ManagementAgent.run() after each gateway call.
+            # The gateway's own provenance-blocked tool_result event (emitted
+            # before the agent's tool_result) has blocked_by at top level.
+            if data.get("blocked_by") == "provenance_check":
+                blocked_by_provenance = True
+            # Also check nested data dict (agent wraps result.data here)
+            if data.get("data", {}).get("blocked_by") == "provenance_check":
+                blocked_by_provenance = True
+
+        if name == "heuristic_fallback":
+            tool = data.get("tool")
+            if tool:
+                planned.add(str(tool))
+
+        # ── Legacy Stage 1 orchestrator event (backward compat) ──────
         if name == "tool_request_validated":
             tool = data.get("tool")
             if tool:
                 planned.add(str(tool))
 
+        # ── Intent gate — emitted by gateway on every tool call ───────
         if name == "intent_gate":
             if data.get("require_confirmation") is True:
                 require_confirmation = True
+            if data.get("allow") is False:
+                blocked_by_gate = True
 
+        # ── Summary detection (both stages) ──────────────────────────
         if name == "summary_agent_structured":
             executed.add("SUMMARIZE_EMAIL")
+            had_summarize = True
+
+        # ── Gmail side-effect events ──────────────────────────────────
         if name in ("gmail_send_email", "gmail_send_draft"):
             executed.add("SEND_EMAIL")
         elif name in ("gmail_create_draft", "gmail_create_draft_for_send"):
@@ -73,6 +112,9 @@ def extract_actions(trace: List[Any], pending_action_id: Optional[str]) -> Dict[
         "planned": sorted(planned),
         "executed": sorted(executed),
         "require_confirmation": require_confirmation,
+        "blocked_by_provenance": blocked_by_provenance,
+        "blocked_by_gate": blocked_by_gate,
+        "had_summarize": had_summarize,
     }
 
 

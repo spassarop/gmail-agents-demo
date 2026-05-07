@@ -10,7 +10,7 @@ from testing_shared.telemetry import add_current_event, traced
 
 from ..gmail_models import TraceEvent
 from ..logging_setup import get_logger
-from ..session_store import PendingAction, SessionState
+from ..session_store import SessionState
 from ..utils import build_gmail_query, format_email_list, safe_truncate
 from ..security.intent_gate import IntentGate
 from ..security.hitl import HITLManager
