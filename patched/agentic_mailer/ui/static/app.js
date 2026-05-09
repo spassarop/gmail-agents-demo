@@ -89,7 +89,7 @@
   }
 
   function setTrace(trace) {
-    if (!traceVisible) return;
+    // Always update so the content is current when the panel is reopened.
     try {
       traceOutput.textContent = JSON.stringify(trace || [], null, 2);
     } catch (e) {
@@ -179,13 +179,22 @@ clearBtn.addEventListener("click", () => {
     traceOutput.textContent = "";
   });
 
-  toggleTraceBtn.addEventListener("click", () => {
-    traceVisible = !traceVisible;
+  function updateTraceToggle() {
+    const layout = document.querySelector(".layout");
     if (traceVisible) {
       tracePanel.classList.remove("hidden");
+      layout.classList.remove("trace-collapsed");
+      toggleTraceBtn.textContent = "Hide trace";
     } else {
       tracePanel.classList.add("hidden");
+      layout.classList.add("trace-collapsed");
+      toggleTraceBtn.textContent = "Show trace";
     }
+  }
+
+  toggleTraceBtn.addEventListener("click", () => {
+    traceVisible = !traceVisible;
+    updateTraceToggle();
   });
 
   document.querySelectorAll("[data-quick]").forEach((btn) => {

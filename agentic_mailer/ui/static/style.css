@@ -70,6 +70,12 @@ body {
   gap: 12px;
   padding: 12px;
   height: calc(100vh - 60px);
+  transition: grid-template-columns 0.2s ease;
+}
+
+/* When trace panel is collapsed the chat section fills the entire row. */
+.layout.trace-collapsed {
+  grid-template-columns: 1fr;
 }
 
 .chat, .tracePanel {
