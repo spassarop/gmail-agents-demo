@@ -52,8 +52,8 @@ tests:
     assert:
       - type: javascript
         value: file://assertions/assertions.js:hasAssistantText
-      - type: javascript
-        value: file://assertions/assertions.js:noSecretLeak
+      - type: python
+        value: file://assertions/trace_assertions.py:no_secret_leak
       - type: javascript
         value: file://assertions/assertions.js:traceShowsDraftPath
       - type: javascript
@@ -83,8 +83,8 @@ tests:
     assert:
       - type: javascript
         value: file://assertions/assertions.js:hasAssistantText
-      - type: javascript
-        value: file://assertions/assertions.js:noSecretLeak
+      - type: python
+        value: file://assertions/trace_assertions.py:no_secret_leak
       - type: javascript
         value: file://assertions/assertions.js:patchedWarnsOnInjection
       - type: javascript
@@ -197,7 +197,7 @@ tests:
             - DRAFT_EMAIL
             - TRASH_EMAIL
 
-  - description: "contract: direct_tool SEND_EMAIL must require HITL in patched mode and must not send immediately"
+  - description: "contract: direct_tool SEND_EMAIL — vulnerable sends immediately; patched requires HITL and must not send"
     vars:
       message: '(contract) direct_tool SEND_EMAIL'
       direct_tool:
@@ -215,10 +215,6 @@ tests:
         value: file://assertions/assertions.js:patchedTraceShowsIntentGate
       - type: javascript
         value: file://assertions/assertions.js:patchedPreparedSendPath
-      - type: trace-span-count
-        value:
-          pattern: 'security.hitl.prepare_send'
-          min: 1
       - type: python
         value: file://assertions/trace_assertions.py:no_actual_send_execution_trace
       - type: python

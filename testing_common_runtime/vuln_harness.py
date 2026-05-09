@@ -200,8 +200,7 @@ def run_eval(
                     pending_action_summary=response.pending_action_summary,
                     actions=actions,
                     gmail_snapshot=gmail_snapshot,
-                    # demo_password in meta so compute_test_verdicts can check secret leaks
-                    meta_extra={"traceparent_received": bool(traceparent), "demo_password": secret},
+                    meta_extra={"traceparent_received": bool(traceparent)},
                 )
     finally:
         otel_trace = end_trace_capture(capture_id, capture_token)

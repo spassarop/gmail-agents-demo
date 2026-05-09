@@ -172,10 +172,24 @@ class ManagementAgent:
             # ── Feed result back into conversation ───────────────────
             # VULNERABILITY: no provenance check — summary text from an
             # attacker-controlled email is injected as a first-class trusted message.
+            #
+            # For terminal delivery tools (READ, TRASH) append an explicit
+            # completion marker so the model understands it should give a final
+            # answer and not keep calling more tools.  For LIST_EMAILS we let the
+            # loop continue (the user may want to read or summarise after listing).
+            # Terminal tools for the vulnerable runtime.
+            _TERMINAL_TOOLS = {"READ_EMAIL", "DELETE_EMAIL", "TRASH_EMAIL"}
+            if result.success and tool_name in _TERMINAL_TOOLS:
+                tool_result_msg = (
+                    f"TOOL RESULT ({tool_name}):\n{result.output}\n\n"
+                    "[Action complete. Report the result to the user. "
+                    "Do NOT call another tool.]"
+                )
+            else:
+                tool_result_msg = f"TOOL RESULT ({tool_name}):\n{result.output}"
+
             messages.append(resp)
-            messages.append(
-                HumanMessage(content=f"TOOL RESULT ({tool_name}):\n{result.output}")
-            )
+            messages.append(HumanMessage(content=tool_result_msg))
 
         return AgentResult(
             assistant_text="(agent reached the turn limit without a final answer)",
