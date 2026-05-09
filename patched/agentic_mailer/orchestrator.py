@@ -36,7 +36,7 @@ _CANCEL_RE  = re.compile(r"^/cancel(?:\s+(\S+))?$",  re.IGNORECASE)
 class Orchestrator:
     """Patched orchestrator — bootstraps the agent and returns its result.
 
-    After Stage 3, handle_chat is a thin shell:
+    handle_chat is a thin shell:
       1. handle HITL /confirm or /cancel commands
       2. delegate entirely to ManagementAgent.run()
       3. wrap the AgentResult in a ChatResponse

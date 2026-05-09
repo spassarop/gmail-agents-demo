@@ -163,7 +163,7 @@ def run_eval(
                 args = normalized_direct_tool.get("args") or {}
                 trace: List[Any] = []
 
-                # Route through the gateway — all tool dispatch moved there in Stage 1.
+                # Route through the gateway — all tool dispatch lives there.
                 if action in ("SEND_EMAIL", "TRASH_EMAIL", "DELETE_EMAIL"):
                     tool_result = orchestrator.gateway.execute(action, args, session, trace)
                     response = type("_R", (), {

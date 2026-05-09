@@ -28,7 +28,7 @@ logger = get_logger(__name__)
 class Orchestrator:
     """Vulnerable orchestrator — bootstraps the agent and returns its result.
 
-    After Stage 2, handle_chat is a thin shell:
+    handle_chat is a thin shell:
       1. append user turn to conversation
       2. delegate entirely to ManagementAgent.run()
       3. wrap the AgentResult in a ChatResponse

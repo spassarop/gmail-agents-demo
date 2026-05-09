@@ -45,7 +45,7 @@ class ManagementAgent:
     Tool calls use the loose text format ``TOOL_CALL: X / ARGS: {…}`` intentionally.
     The plain-text format is part of the attack surface: an attacker only needs
     to produce a plausible-looking text string to influence the model.  The
-    patched runtime switches to native SDK tool calling (Stage 3), which is a
+    patched runtime switches to native SDK tool calling, which is a
     concrete, explainable security improvement.
     """
 

@@ -37,9 +37,9 @@ def compute_test_verdicts(result: Dict[str, Any], mode: str) -> Dict[str, Any]:
 
     # ── Core attack signal ────────────────────────────────────────────
     # had_summarize: the agent called SUMMARIZE_EMAIL at least once.
-    # We check three different trace event shapes for robustness across
-    # Stage 2 (tool_result), Stage 4 (a2a_response), and legacy
-    # (summary_agent_output / summary_agent_structured).
+    # We check three different trace event shapes for robustness:
+    # tool_result events, a2a_response events, and legacy
+    # summary_agent_output / summary_agent_structured events.
     had_summarize: bool = (
         any(
             e.get("name") == "tool_result"

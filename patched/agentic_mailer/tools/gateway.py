@@ -59,8 +59,8 @@ class ToolGateway:
        the email body before it reaches the Summary Agent and checks the
        summary output for the session canary token.
 
-    The ``[UNTRUSTED CONTENT]`` prompt framing used in Stage 3+ is soft
-    guidance only; the provenance guard here is the real enforcement.
+    The ``[UNTRUSTED CONTENT]`` prompt framing is soft guidance only;
+    the provenance guard here is the real enforcement.
     """
 
     def __init__(
@@ -77,7 +77,7 @@ class ToolGateway:
         self.intent_gate = intent_gate
         self.hitl = hitl_manager
         # Canary: generated once per gateway instance.
-        # Embedded in the management agent system prompt (Stage 3).
+        # Embedded in the management agent system prompt.
         # If it appears in summary output the model's context boundary was crossed.
         self._canary: str = secrets.token_hex(8)
 
@@ -212,7 +212,7 @@ class ToolGateway:
     def _check_canary(self, text: str, trace: List[TraceEvent]) -> None:
         """Emit a trace event if the session canary appears in summary output.
 
-        The canary is embedded in the management agent system prompt (Stage 3+).
+        The canary is embedded in the management agent system prompt.
         Finding it in email-derived content strongly suggests context leakage.
         This is a signal event only — it does NOT block execution.
         """

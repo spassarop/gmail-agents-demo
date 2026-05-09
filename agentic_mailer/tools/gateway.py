@@ -27,10 +27,10 @@ class ToolGateway:
     Permissive by design: no policy checks, no provenance tracking.
     All Gmail calls and sub-agent calls route through here.
 
-    After Stage 2 the vulnerability path lives in the ManagementAgent turn loop:
+    The vulnerability path lives in the ManagementAgent turn loop:
     the loop feeds SUMMARIZE_EMAIL results back as trusted context and executes
     whatever high-impact tool the model proposes next — no validation.
-    The gateway is now a pure dispatcher.
+    The gateway is a pure dispatcher.
     """
 
     def __init__(

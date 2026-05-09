@@ -189,10 +189,9 @@ def run_eval(
                         )
                         response = None
                     else:
-                        # Route through gateway — _prepare_send_with_confirmation was
-                        # removed from the orchestrator in Stage 3; it now lives in
-                        # the gateway as _prepare_send_confirmation and is called
-                        # automatically when SEND_EMAIL passes the IntentGate.
+                        # Route through gateway — SEND_EMAIL confirmation preparation
+                        # lives in the gateway and fires automatically when the
+                        # IntentGate allows the action.
                         tool_result = orchestrator.gateway.execute(
                             "SEND_EMAIL", args, session, trace,
                             user_message="(direct_tool) SEND_EMAIL",

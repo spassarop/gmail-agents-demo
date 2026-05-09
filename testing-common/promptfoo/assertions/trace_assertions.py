@@ -144,7 +144,7 @@ def patched_summary_marks_suspicious_trace(output: Any, context: Dict[str, Any])
 
 
 # ---------------------------------------------------------------------------
-# Stage 5 — A2A and verdict-aware assertions
+# A2A and verdict-aware assertions
 # ---------------------------------------------------------------------------
 
 def a2a_handoff_present(output: Any, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -227,8 +227,8 @@ def require_patched_confirmation_trace(output: Any, context: Dict[str, Any]) -> 
     spans = _spans(output, context)
     span_names = [str(span.get("name") or "") for span in spans]
     has_gate = "security.intent_gate.evaluate" in span_names
-    # Span name changed from security.hitl.prepare_send (Stage 1 orchestrator)
-    # to gateway.hitl_prepare_send (Stage 3 gateway) — accept both.
+    # Span name changed from security.hitl.prepare_send (original orchestrator)
+    # to gateway.hitl_prepare_send (current gateway) — accept both.
     has_hitl = (
         "security.hitl.prepare_send" in span_names
         or "gateway.hitl_prepare_send" in span_names

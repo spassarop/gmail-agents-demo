@@ -56,7 +56,7 @@ class ToolResult:
     success: bool
     output: str            # human-readable text returned to the agent / shown to the user
     data: dict = field(default_factory=dict)   # structured payload for trace events
-    provenance: str = "system"                 # "system" | "email_content" — set by Stage 3+
+    provenance: str = "system"                 # "system" | "email_content"
 
     # HITL fields — only set by the patched gateway; always False/None in the vulnerable runtime
     require_confirmation: bool = False
@@ -65,7 +65,7 @@ class ToolResult:
 
 
 # ---------------------------------------------------------------------------
-# A2A typed handoff messages — Stage 4
+# A2A typed handoff messages
 # ---------------------------------------------------------------------------
 
 @dataclass
