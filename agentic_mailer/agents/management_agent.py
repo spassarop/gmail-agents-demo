@@ -175,10 +175,8 @@ class ManagementAgent:
             #
             # For terminal delivery tools (READ, TRASH) append an explicit
             # completion marker so the model understands it should give a final
-            # answer and not keep calling more tools.  For LIST_EMAILS we let the
-            # loop continue (the user may want to read or summarise after listing).
-            # Terminal tools for the vulnerable runtime.
-            _TERMINAL_TOOLS = {"READ_EMAIL", "DELETE_EMAIL", "TRASH_EMAIL"}
+            # answer and not keep calling more tools.
+            _TERMINAL_TOOLS = {"LIST_EMAILS", "READ_EMAIL", "DELETE_EMAIL", "TRASH_EMAIL"}
             if result.success and tool_name in _TERMINAL_TOOLS:
                 tool_result_msg = (
                     f"TOOL RESULT ({tool_name}):\n{result.output}\n\n"
