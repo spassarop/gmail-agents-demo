@@ -19,6 +19,15 @@
     </div>
   </header>
 
+  <div id="authBanner" class="authBanner hidden" role="alert">
+    <div class="authBannerContent">
+      <span class="authBannerIcon">🔑</span>
+      <span id="authMsg" class="authBannerMsg">Gmail authorization required.</span>
+      <button id="authBtn" class="btn primary">Sign in with Google</button>
+      <span class="authBannerHint">Opens in a new tab — come back here once authorized.</span>
+    </div>
+  </div>
+
   <main class="layout">
     <section class="chat">
       <div id="chatLog" class="chatLog" aria-live="polite"></div>

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -15,6 +15,7 @@ from testing_shared.telemetry import ensure_tracing
 from ..logging_setup import configure_logging, get_logger
 from ..session_store import SessionStore
 from ..orchestrator import Orchestrator
+from ..gmail_client import AuthRequired
 
 logger = get_logger(__name__)
 
@@ -73,6 +74,55 @@ def create_app(mode: str = "vulnerable") -> FastAPI:
 
     SESSION_COOKIE = "asi01_session"
 
+    # ------------------------------------------------------------------
+    # Gmail OAuth endpoints
+    # ------------------------------------------------------------------
+
+    @app.get("/auth/start")
+    async def auth_start(request: Request):
+        """Generate the Google OAuth URL and redirect the user's browser to it."""
+        redirect_uri = str(request.base_url).rstrip("/") + "/auth/callback"
+        try:
+            auth_url = orchestrator.gmail.prepare_auth_url(redirect_uri)
+        except Exception as exc:
+            return HTMLResponse(
+                f"<h2>Cannot start auth: {exc}</h2>"
+                "<p>Check that <code>secrets/credentials.json</code> exists.</p>",
+                status_code=500,
+            )
+        return RedirectResponse(auth_url)
+
+    @app.get("/auth/callback")
+    async def auth_callback(request: Request, code: str = "", error: str = ""):
+        """Handle the Google OAuth redirect, save the token, and return to the app."""
+        if error:
+            return HTMLResponse(
+                f"<h2>Google authorization denied</h2><p>{error}</p>"
+                "<p><a href='/'>Back to the app</a></p>",
+                status_code=400,
+            )
+        if not code:
+            return HTMLResponse(
+                "<h2>Missing authorization code</h2>",
+                status_code=400,
+            )
+        try:
+            orchestrator.gmail.exchange_code(code)
+        except Exception as exc:
+            logger.exception("OAuth code exchange failed")
+            return HTMLResponse(
+                f"<h2>Authorization failed</h2><p>{exc}</p>"
+                "<p><a href='/'>Back to the app</a></p>",
+                status_code=500,
+            )
+        # Reload the original tab and close this one.
+        return HTMLResponse(
+            "<html><body><script>"
+            "if(window.opener){window.opener.location.reload();window.close();}"
+            "else{window.location.href='/';}"
+            "</script><p>Authorized — closing this tab…</p></body></html>"
+        )
+
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request):
         # Create or reuse a session cookie
@@ -113,6 +163,17 @@ def create_app(mode: str = "vulnerable") -> FastAPI:
 
         logger.info("WS connect session=%s mode=%s", session.session_id, mode)
 
+        async def send_auth_required() -> None:
+            await ws.send_text(json.dumps({
+                "type": "auth_required",
+                "auth_url": "/auth/start",
+                "reason": "Gmail authorization required. Click to sign in with Google.",
+            }))
+
+        # Notify the client immediately if credentials are missing or expired.
+        if orchestrator.gmail.needs_auth():
+            await send_auth_required()
+
         try:
             while True:
                 raw = await ws.receive_text()
@@ -129,7 +190,11 @@ def create_app(mode: str = "vulnerable") -> FastAPI:
                 if not text:
                     continue
 
-                resp = orchestrator.handle_chat(session, text)
+                try:
+                    resp = orchestrator.handle_chat(session, text)
+                except AuthRequired:
+                    await send_auth_required()
+                    continue
 
                 await ws.send_text(
                     json.dumps(
@@ -144,6 +209,11 @@ def create_app(mode: str = "vulnerable") -> FastAPI:
                 )
         except WebSocketDisconnect:
             logger.info("WS disconnect session=%s", session.session_id)
+        except AuthRequired:
+            try:
+                await send_auth_required()
+            except Exception:
+                pass
         except Exception as e:
             logger.exception("WS error: %s", e)
             try:

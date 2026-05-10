@@ -8,6 +8,9 @@
   const tracePanel = document.getElementById("tracePanel");
   const traceOutput = document.getElementById("traceOutput");
   const pendingSpinner = document.getElementById("pendingSpinner");
+  const authBanner = document.getElementById("authBanner");
+  const authBtn = document.getElementById("authBtn");
+  const authMsg = document.getElementById("authMsg");
 
   let ws = null;
   let traceVisible = true;
@@ -88,6 +91,25 @@
     chatLog.scrollTop = chatLog.scrollHeight;
   }
 
+  function showAuthBanner(authUrl, reason) {
+    if (!authBanner) return;
+    if (authMsg) authMsg.textContent = reason || "Gmail authorization required.";
+    if (authBtn) {
+      authBtn.onclick = () => window.open(authUrl, "_blank");
+    }
+    authBanner.classList.remove("hidden");
+    // Disable chat input while auth is pending
+    if (chatInput) chatInput.disabled = true;
+    if (sendBtn) sendBtn.disabled = true;
+  }
+
+  function hideAuthBanner() {
+    if (!authBanner) return;
+    authBanner.classList.add("hidden");
+    if (chatInput) chatInput.disabled = false;
+    if (sendBtn) sendBtn.disabled = false;
+  }
+
   function setTrace(trace) {
     // Always update so the content is current when the panel is reopened.
     try {
@@ -112,11 +134,15 @@
 
       if (msg.type === "assistant_message") {
         setLoading(false);
+        hideAuthBanner();
         addMessage("assistant", msg.assistant_text || "", {
           pending_action_id: msg.pending_action_id || null,
           pending_action_summary: msg.pending_action_summary || null
         });
         setTrace(msg.trace || []);
+      } else if (msg.type === "auth_required") {
+        setLoading(false);
+        showAuthBanner(msg.auth_url || "/auth/start", msg.reason || "Gmail authorization required.");
       } else if (msg.type === "error") {
         setLoading(false);
         addMessage("assistant", "Error: " + (msg.error || "unknown"), null);

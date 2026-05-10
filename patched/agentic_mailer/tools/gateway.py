@@ -27,6 +27,7 @@ from ..security.schemas import (
 )
 
 from .definitions import HandoffEnvelope, HandoffResponse, ToolResult
+from ..gmail_client import AuthRequired
 
 
 def _short_uuid() -> str:
@@ -163,6 +164,8 @@ class ToolGateway:
         # Layer 3 — dispatch with optional HITL.
         try:
             return self._dispatch(tool_req, session, trace, user_message, decision)
+        except AuthRequired:
+            raise  # let auth errors propagate to the server's WS handler
         except Exception as exc:
             logger.exception("ToolGateway.execute error tool=%s", tool_name)
             self._emit(trace, "tool_error", {"tool": tool_name, "error": str(exc)})

@@ -6,6 +6,7 @@ from email.message import EmailMessage
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from google.auth.exceptions import RefreshError, TransportError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -23,9 +24,64 @@ class GmailClientError(RuntimeError):
     pass
 
 
+class AuthRequired(RuntimeError):
+    """Raised when Gmail needs user authorization that cannot happen silently."""
+
+    def __init__(self, auth_url: str = ""):
+        self.auth_url = auth_url
+        super().__init__("Gmail authorization required")
+
+
 class GmailClient:
     def __init__(self, secrets_dir: str = "secrets"):
         self.secrets_dir = Path(secrets_dir)
+        self._service = None
+        self._pending_flow: Optional[InstalledAppFlow] = None
+
+    def needs_auth(self) -> bool:
+        token_path = self.secrets_dir / "token.json"
+        cred_path = self.secrets_dir / "credentials.json"
+        if not cred_path.exists():
+            return False
+        if not token_path.exists():
+            return True
+        try:
+            creds = Credentials.from_authorized_user_file(str(token_path), GMAIL_SCOPES)
+            return not creds or (not creds.valid and not (creds.expired and creds.refresh_token))
+        except Exception:
+            return True
+
+    def prepare_auth_url(self, redirect_uri: str) -> str:
+        cred_path = self.secrets_dir / "credentials.json"
+        if not cred_path.exists():
+            raise GmailClientError(f"Missing Gmail OAuth credentials: {cred_path}")
+        flow = InstalledAppFlow.from_client_secrets_file(str(cred_path), GMAIL_SCOPES)
+        flow.redirect_uri = redirect_uri
+        auth_url, _ = flow.authorization_url(
+            access_type="offline",
+            prompt="consent",
+            include_granted_scopes="true",
+        )
+        self._pending_flow = flow
+        logger.info("OAuth flow prepared — auth URL generated")
+        return auth_url
+
+    def exchange_code(self, code: str) -> None:
+        if self._pending_flow is None:
+            raise GmailClientError("No pending OAuth flow — call prepare_auth_url() first")
+        try:
+            self._pending_flow.fetch_token(code=code)
+            creds = self._pending_flow.credentials
+        except Exception as exc:
+            raise GmailClientError(f"OAuth token exchange failed: {exc}") from exc
+        finally:
+            self._pending_flow = None
+        token_path = self.secrets_dir / "token.json"
+        token_path.write_text(creds.to_json(), encoding="utf-8")
+        self._service = None
+        logger.info("Gmail credentials saved to %s", token_path)
+
+    def invalidate(self) -> None:
         self._service = None
 
     def service(self):
@@ -42,19 +98,23 @@ class GmailClient:
 
         creds: Optional[Credentials] = None
         if token_path.exists():
-            creds = Credentials.from_authorized_user_file(str(token_path), GMAIL_SCOPES)
+            try:
+                creds = Credentials.from_authorized_user_file(str(token_path), GMAIL_SCOPES)
+            except Exception as exc:
+                logger.warning("Could not load token.json: %s", exc)
+                creds = None
 
-        # Refresh / generate token if needed
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 logger.info("Refreshing Gmail OAuth token...")
-                creds.refresh(Request())
+                try:
+                    creds.refresh(Request())
+                    token_path.write_text(creds.to_json(), encoding="utf-8")
+                except (RefreshError, TransportError) as exc:
+                    logger.warning("Token refresh failed: %s", exc)
+                    raise AuthRequired() from exc
             else:
-                logger.info("Starting Gmail OAuth flow (browser popup may appear)...")
-                flow = InstalledAppFlow.from_client_secrets_file(str(cred_path), GMAIL_SCOPES)
-                creds = flow.run_local_server(port=0)
-
-            token_path.write_text(creds.to_json(), encoding="utf-8")
+                raise AuthRequired()
 
         try:
             return build("gmail", "v1", credentials=creds)

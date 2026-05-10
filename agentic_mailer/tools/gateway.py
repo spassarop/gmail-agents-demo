@@ -12,6 +12,7 @@ from ..session_store import SessionState
 from ..utils import format_email_list, safe_truncate
 
 from .definitions import HandoffEnvelope, HandoffResponse, ToolResult
+from ..gmail_client import AuthRequired
 
 
 def _short_uuid() -> str:
@@ -76,6 +77,8 @@ class ToolGateway:
                 output=f"Unknown tool: {tool_name}",
                 data={"error": "unknown_tool"},
             )
+        except AuthRequired:
+            raise  # let auth errors propagate to the server's WS handler
         except Exception as exc:
             logger.exception("ToolGateway.execute error tool=%s", tool_name)
             self._emit(trace, "tool_error", {"tool": tool_name, "error": str(exc)})
