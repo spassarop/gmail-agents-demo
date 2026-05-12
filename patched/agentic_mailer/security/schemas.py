@@ -39,6 +39,7 @@ class ListEmailsArgs(BaseModel):
     newer_than_days: Optional[int] = Field(None, ge=0)
     label: Optional[str] = None
     max_results: int = Field(5, ge=1, le=50)
+    ascending: bool = Field(False, description="True = oldest first (chronological order)")
 
 
 class ReadEmailArgs(BaseModel):

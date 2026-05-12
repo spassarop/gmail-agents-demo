@@ -135,17 +135,25 @@ class ToolGateway:
         ):
             query = str(args.get("query", "") or "")
             max_results = int(args.get("count") or args.get("limit") or args.get("max_results", 5))
+            ascending = bool(args.get("ascending", False))
 
-            logger.info("LIST_EMAILS query=%r max_results=%s", query, max_results)
+            logger.info("LIST_EMAILS query=%r max_results=%s ascending=%s", query, max_results, ascending)
             items = self.gmail.list_messages(query=query, max_results=max_results)
+
+            if ascending and items:
+                items = sorted(
+                    items,
+                    key=lambda e: (e.date is None, e.date),
+                )
+
             session.last_email_list = items
-            self._emit(trace, "gmail_list_messages", {"count": len(items), "query": query, "max_results": max_results})
+            self._emit(trace, "gmail_list_messages", {"count": len(items), "query": query, "max_results": max_results, "ascending": ascending})
 
             return ToolResult(
                 tool="LIST_EMAILS",
                 success=True,
                 output=format_email_list(items),
-                data={"count": len(items), "query": query, "max_results": max_results},
+                data={"count": len(items), "query": query, "max_results": max_results, "ascending": ascending},
             )
 
     def _dispatch_read_email(

@@ -15,7 +15,12 @@ TOOL_SPECS = [
     ToolSpec(
         name="LIST_EMAILS",
         description="List emails from the mailbox matching optional filters.",
-        args_schema='{"query": "string (optional Gmail query)", "max_results": "int 1-50"}',
+        args_schema=(
+            '{"query": "string (optional Gmail query)", '
+            '"max_results": "int 1-50", '
+            '"newer_than_days": "int (1=last 24 h / today, 7=last week, …)", '
+            '"ascending": "bool (true=oldest first, false=newest first)"}'
+        ),
     ),
     ToolSpec(
         name="READ_EMAIL",

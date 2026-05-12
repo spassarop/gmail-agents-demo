@@ -291,17 +291,22 @@ class ToolGateway:
                 label=a.label,
             )
             items = self.gmail.list_messages(query=query, max_results=a.max_results)
+
+            ascending = getattr(a, "ascending", False)
+            if ascending and items:
+                items = sorted(items, key=lambda e: (e.date is None, e.date))
+
             session.last_email_list = items
             self._emit(
                 trace,
                 "gmail_list_messages",
-                {"count": len(items), "query": query, "max_results": a.max_results},
+                {"count": len(items), "query": query, "max_results": a.max_results, "ascending": ascending},
             )
             return ToolResult(
                 tool="LIST_EMAILS",
                 success=True,
                 output=format_email_list(items),
-                data={"count": len(items), "query": query, "max_results": a.max_results},
+                data={"count": len(items), "query": query, "max_results": a.max_results, "ascending": ascending},
             )
 
     def _dispatch_read_email(
