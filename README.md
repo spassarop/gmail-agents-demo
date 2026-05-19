@@ -112,6 +112,139 @@ This design keeps the runtime entrypoint simple and also makes live demos easier
 
 ---
 
+## Architecture diagrams
+
+The two diagrams below show the same end-to-end request flow under both runtimes. They cover the standard path — a user message arrives through the web UI, the Management Agent runs a ReAct loop, and tool calls are dispatched through the ToolGateway to Gmail tools and the Summary / Composition sub-agents.
+
+The contrast is intentional: the boxes are nearly identical, the trust boundaries are not.
+
+### Vulnerable architecture (standard flow)
+
+In the vulnerable runtime, the ToolGateway is a permissive dispatcher. Email content returned by `SUMMARIZE_EMAIL` is fed back into the Management Agent's loop as a trusted `HumanMessage`, with no provenance check and no intent validation. That is the seam an attacker exploits.
+
+```mermaid
+flowchart LR
+    User([User])
+
+    subgraph Ingress[Ingress]
+        direction TB
+        UI[Web UI / WebSocket]
+        Orchestrator[Orchestrator<br/>handle_chat]
+        UI --> Orchestrator
+    end
+
+    subgraph Core[Agentic core]
+        direction TB
+        Mgmt[Management Agent<br/>ReAct loop<br/>regex TOOL_CALL / ARGS]
+        Gateway[ToolGateway<br/>permissive dispatcher]
+        Mgmt -->|TOOL_CALL / ARGS| Gateway
+        Gateway -->|ToolResult.output| Mgmt
+    end
+
+    subgraph Workers[Sub-agents]
+        direction TB
+        Summary[Summary Agent<br/>single LLM call]
+        Compose[Composition Agent<br/>single LLM call]
+    end
+
+    subgraph External[External]
+        direction TB
+        Gmail[(Gmail tools<br/>LIST / READ / DRAFT<br/>SEND / TRASH)]
+        Mailbox[(Mailbox<br/>attacker-controlled body)]
+        Gmail --> Mailbox
+    end
+
+    User -->|chat message| UI
+    Orchestrator --> Mgmt
+    Gateway --> Gmail
+    Gateway -->|HandoffEnvelope| Summary
+    Gateway -->|HandoffEnvelope| Compose
+    Summary -->|raw summary text| Gateway
+    Compose -->|draft text| Gateway
+    Mailbox -.->|injected instructions| Summary
+    Mgmt -.->|summary fed back as trusted HumanMessage<br/>no provenance check| Mgmt
+
+    classDef danger fill:#fee,stroke:#c33,color:#900;
+    classDef external fill:#eef,stroke:#669,color:#003;
+    class Mailbox,Summary danger;
+    class User,UI external;
+```
+
+The dotted edges mark the trust violation: attacker-controlled text crosses from the mailbox into the Management Agent's conversation as if it were the user speaking, and the loop is free to chain a destructive tool right after.
+
+### Patched architecture (standard flow)
+
+The patched runtime keeps the same shape but adds a stack of controls inside the gateway and the Management Agent. The primary enforcement boundary is a code-level provenance guard: high-impact tools (`SEND_EMAIL`, `TRASH_EMAIL`) are refused outright when the previous tool result came from email content. Prompt-level `[UNTRUSTED CONTENT]` framing exists only as defense-in-depth.
+
+```mermaid
+flowchart LR
+    User([User])
+
+    subgraph Ingress[Ingress]
+        direction TB
+        UI[Web UI / WebSocket<br/>/confirm /cancel]
+        Orchestrator[Orchestrator<br/>handle_chat]
+        UI --> Orchestrator
+    end
+
+    subgraph Core[Agentic core]
+        direction TB
+        Mgmt[Management Agent<br/>bind_tools structured calls<br/>tracks last_provenance]
+    end
+
+    subgraph GW[ToolGateway control stack]
+        direction TB
+        Prov{Provenance guard<br/>email_content + SEND/TRASH ?}
+        Sanitize[Sanitize body<br/>strip TOOL_CALL syntax]
+        Intent{IntentGate<br/>user-intent policy}
+        HITL[HITL Manager<br/>awaits /confirm]
+        Canary[Canary check<br/>session token]
+        Blocked[/Blocked/]
+        Prov -- yes --> Blocked
+        Prov -- no --> Sanitize
+        Sanitize --> Intent
+        Intent -- deny --> Blocked
+        Intent -- allow + confirm --> HITL
+    end
+
+    subgraph Workers[Sub-agents]
+        direction TB
+        Summary[Summary Agent<br/>structured EmailSummary]
+        Compose[Composition Agent]
+    end
+
+    subgraph External[External]
+        direction TB
+        Gmail[(Gmail tools<br/>LIST / READ / DRAFT<br/>SEND / TRASH)]
+        Mailbox[(Mailbox<br/>untrusted body)]
+        Gmail --> Mailbox
+    end
+
+    User -->|chat message| UI
+    Orchestrator --> Mgmt
+    Mgmt -->|tool_calls + last_provenance| Prov
+    Intent -- allow --> Gmail
+    HITL -->|user /confirm| Gmail
+    Sanitize --> Summary
+    Sanitize --> Compose
+    Mailbox --> Summary
+    Summary --> Canary
+    Canary -->|ToolResult + provenance| Mgmt
+    Compose -->|ToolResult + provenance| Mgmt
+    Mgmt -.->|wrap email-derived text<br/>UNTRUSTED CONTENT| Mgmt
+
+    classDef control fill:#efe,stroke:#393,color:#060;
+    classDef block fill:#fee,stroke:#c33,color:#900;
+    classDef external fill:#eef,stroke:#669,color:#003;
+    class Prov,Sanitize,Canary,Intent,HITL control;
+    class Blocked block;
+    class User,UI external;
+```
+
+The same `SUMMARIZE_EMAIL` → `SEND_EMAIL` chain that succeeds in the vulnerable diagram is stopped here at the provenance guard, before IntentGate or HITL are even reached. That ordering — code-level guard first, semantic gate second, prompt framing last — is the defense hierarchy the rest of the document refers to.
+
+---
+
 ## Main repository layout
 
 ```text
