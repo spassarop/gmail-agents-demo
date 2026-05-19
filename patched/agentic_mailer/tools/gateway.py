@@ -541,37 +541,28 @@ class ToolGateway:
                 {"draft_id": gmail_draft.id, "to": to_email, "subject": subject},
             )
 
-            # Optional HITL if user message contains "send".
-            pending_action_id = None
-            pending_action_summary = None
-            if "send" in (user_message or "").lower():
-                pa = self.hitl.create_pending(
-                    session=session,
-                    kind="send_draft",
-                    summary=f"About to send draft to {to_email} (subject: {subject}). Confirm to send.",
-                    payload={"draft_id": gmail_draft.id},
-                )
-                pending_action_id = pa.id
-                pending_action_summary = pa.summary
+            pa = self.hitl.create_pending(
+                session=session,
+                kind="send_draft",
+                summary=f"About to send draft to {to_email} (subject: {subject}). Confirm to send.",
+                payload={"draft_id": gmail_draft.id},
+            )
 
             output = (
                 f"Created a draft to {to_email}.\n"
                 f"Subject: {subject}\n\n"
                 f"Body:\n{safe_truncate(body, 3000)}\n\n"
-                + (
-                    "Click Confirm to send now.\n"
-                    if pending_action_id
-                    else f"To send it, say: 'send email to {to_email}' (then confirm)."
-                )
+                f"Click Confirm or type: /confirm {pa.id} to send it.\n"
+                f"If you only wanted a draft, ignore this prompt."
             )
             return ToolResult(
                 tool="DRAFT_EMAIL",
                 success=True,
                 output=output,
                 data={"draft_id": gmail_draft.id, "to": to_email, "subject": subject},
-                require_confirmation=bool(pending_action_id),
-                pending_action_id=pending_action_id,
-                pending_action_summary=pending_action_summary,
+                require_confirmation=True,
+                pending_action_id=pa.id,
+                pending_action_summary=pa.summary,
             )
 
     def _dispatch_trash_email(
