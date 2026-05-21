@@ -28,5 +28,5 @@ class DemoConfig:
 @dataclass(frozen=True)
 class ModelConfig:
     summary_model: str = "phi3:latest"
-    management_model: str = "llama3.1:8b-instruct-q4_K_M"
+    management_model: str = "qwen2.5:7b"
     composition_model: str = "phi3:latest"

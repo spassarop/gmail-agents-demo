@@ -70,6 +70,12 @@ body {
   gap: 12px;
   padding: 12px;
   height: calc(100vh - 60px);
+  transition: grid-template-columns 0.2s ease;
+}
+
+/* When trace panel is collapsed the chat section fills the entire row. */
+.layout.trace-collapsed {
+  grid-template-columns: 1fr;
 }
 
 .chat, .tracePanel {
@@ -194,6 +200,41 @@ body {
 }
 
 .hidden { display: none !important; }
+
+.authBanner {
+  display: flex;
+  justify-content: center;
+  padding: 10px 16px;
+  background: #3b1f00;
+  border-bottom: 1px solid #7a4200;
+}
+
+:root.theme-light .authBanner {
+  background: #fff3cd;
+  border-bottom: 1px solid #ffc107;
+}
+
+.authBannerContent {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.authBannerIcon { font-size: 18px; }
+
+.authBannerMsg {
+  color: #ffcc80;
+  font-size: 14px;
+}
+
+:root.theme-light .authBannerMsg { color: #7a4200; }
+
+.authBannerHint {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: italic;
+}
 
 .actionRow { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
 .actionHint { color: var(--muted); font-size: 12px; margin-top: 6px; }

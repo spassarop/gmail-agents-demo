@@ -13,11 +13,20 @@
       <div class="subtitle">Mode: <span class="badge">{{ mode }}</span> • Session: <span class="mono">{{ session_id }}</span></div>
     </div>
     <div class="controls">
-      <button id="toggleTraceBtn" class="btn">Toggle trace</button>
+      <button id="toggleTraceBtn" class="btn">Hide trace</button>
       <button id="toggleThemeBtn" class="btn">Light mode</button>
       <button id="clearBtn" class="btn">Clear chat</button>
     </div>
   </header>
+
+  <div id="authBanner" class="authBanner hidden" role="alert">
+    <div class="authBannerContent">
+      <span class="authBannerIcon">🔑</span>
+      <span id="authMsg" class="authBannerMsg">Gmail authorization required.</span>
+      <button id="authBtn" class="btn primary">Sign in with Google</button>
+      <span class="authBannerHint">Opens in a new tab — come back here once authorized.</span>
+    </div>
+  </div>
 
   <main class="layout">
     <section class="chat">

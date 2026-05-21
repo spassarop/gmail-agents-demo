@@ -39,41 +39,46 @@ def _load_runtime(repo_root: Path):
 
 
 def extract_actions(trace: List[Any], pending_action_id: Optional[str]) -> Dict[str, Any]:
-    planned: set[str] = set()
-    executed: set[str] = set()
-    require_confirmation = bool(pending_action_id)
+    """Return factual planned/executed tool lists — no verdicts, no defense signals.
+
+    Verdict computation lives in ``testing_common_runtime.verdicts``.
+    ``pending_action_id`` is kept as a parameter for API compatibility but is
+    no longer used here — the caller adds it to the result dict directly.
+    """
+    planned: set = set()
+    executed: set = set()
 
     for item in trace:
-        name = getattr(item, "name", None)
-        data = getattr(item, "data", None) or {}
+        name = getattr(item, "name", "") or ""
+        data = getattr(item, "data", {}) or {}
 
-        if name == "tool_request_validated":
-            tool = data.get("tool")
-            if tool:
-                planned.add(str(tool))
+        # tool_result: agent loop emits this after every gateway call.
+        if name == "tool_result":
+            t = data.get("tool", "")
+            if t:
+                planned.add(str(t))
 
-        if name == "intent_gate":
-            if data.get("require_confirmation") is True:
-                require_confirmation = True
+        # a2a_response: sub-agent completed — from_agent identifies which.
+        if name == "a2a_response":
+            fa = data.get("from_agent", "")
+            if fa == "summary":
+                executed.add("SUMMARIZE_EMAIL")
+            elif fa == "composition":
+                executed.add("DRAFT_EMAIL")
 
-        if name == "summary_agent_structured":
-            executed.add("SUMMARIZE_EMAIL")
+        # Gmail side-effect events — ground truth for what actually executed.
         if name in ("gmail_send_email", "gmail_send_draft"):
             executed.add("SEND_EMAIL")
-        elif name in ("gmail_create_draft", "gmail_create_draft_for_send"):
+        if name in ("gmail_create_draft", "gmail_create_draft_for_send"):
             executed.add("DRAFT_EMAIL")
-        elif name == "gmail_trash_message":
+        if name == "gmail_trash_message":
             executed.add("TRASH_EMAIL")
-        elif name == "gmail_get_message":
+        if name == "gmail_get_message":
             executed.add("READ_EMAIL")
-        elif name == "gmail_list_messages":
+        if name == "gmail_list_messages":
             executed.add("LIST_EMAILS")
 
-    return {
-        "planned": sorted(planned),
-        "executed": sorted(executed),
-        "require_confirmation": require_confirmation,
-    }
+    return {"planned": sorted(planned), "executed": sorted(executed)}
 
 
 
@@ -178,24 +183,30 @@ def run_eval(
                             mode="testing-patched",
                             trace=trace,
                             assistant_text=f"Blocked by Intent Gate: {decision.reason}",
-                            actions={
-                                "planned": ["SEND_EMAIL"],
-                                "executed": [],
-                                "require_confirmation": False,
-                                "leaked_secret": False,
-                            },
+                            actions={"planned": ["SEND_EMAIL"], "executed": []},
                             gmail_snapshot=gmail_snapshot_of(orchestrator.gmail),
                             meta_extra={"traceparent_received": bool(traceparent)},
                         )
                         response = None
                     else:
-                        response = orchestrator._prepare_send_with_confirmation(session, tool_req, decision.reason, trace)  # type: ignore[attr-defined]
+                        # Route through gateway — SEND_EMAIL confirmation preparation
+                        # lives in the gateway and fires automatically when the
+                        # IntentGate allows the action.
+                        tool_result = orchestrator.gateway.execute(
+                            "SEND_EMAIL", args, session, trace,
+                            user_message="(direct_tool) SEND_EMAIL",
+                        )
+                        response = type("_R", (), {
+                            "assistant_text": tool_result.output,
+                            "pending_action_id": tool_result.pending_action_id,
+                            "pending_action_summary": tool_result.pending_action_summary,
+                        })()
                 else:
                     result = _build_result(
                         mode="testing-patched",
                         trace=trace,
                         assistant_text="",
-                        actions={"planned": [action], "executed": [], "require_confirmation": False, "leaked_secret": False},
+                        actions={"planned": [action], "executed": []},
                         gmail_snapshot=gmail_snapshot_of(orchestrator.gmail),
                         meta_extra={"traceparent_received": bool(traceparent)},
                         error=f"Unsupported direct_tool action in patched harness: {action}",
@@ -215,7 +226,7 @@ def run_eval(
                     assistant_text=response.assistant_text,
                     pending_action_id=response.pending_action_id,
                     pending_action_summary=response.pending_action_summary,
-                    actions={**actions, "leaked_secret": False},
+                    actions=actions,
                     gmail_snapshot=gmail_snapshot,
                     meta_extra={"traceparent_received": bool(traceparent)},
                 )

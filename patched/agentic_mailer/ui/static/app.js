@@ -8,6 +8,9 @@
   const tracePanel = document.getElementById("tracePanel");
   const traceOutput = document.getElementById("traceOutput");
   const pendingSpinner = document.getElementById("pendingSpinner");
+  const authBanner = document.getElementById("authBanner");
+  const authBtn = document.getElementById("authBtn");
+  const authMsg = document.getElementById("authMsg");
 
   let ws = null;
   let traceVisible = true;
@@ -88,8 +91,27 @@
     chatLog.scrollTop = chatLog.scrollHeight;
   }
 
+  function showAuthBanner(authUrl, reason) {
+    if (!authBanner) return;
+    if (authMsg) authMsg.textContent = reason || "Gmail authorization required.";
+    if (authBtn) {
+      authBtn.onclick = () => window.open(authUrl, "_blank");
+    }
+    authBanner.classList.remove("hidden");
+    // Disable chat input while auth is pending
+    if (chatInput) chatInput.disabled = true;
+    if (sendBtn) sendBtn.disabled = true;
+  }
+
+  function hideAuthBanner() {
+    if (!authBanner) return;
+    authBanner.classList.add("hidden");
+    if (chatInput) chatInput.disabled = false;
+    if (sendBtn) sendBtn.disabled = false;
+  }
+
   function setTrace(trace) {
-    if (!traceVisible) return;
+    // Always update so the content is current when the panel is reopened.
     try {
       traceOutput.textContent = JSON.stringify(trace || [], null, 2);
     } catch (e) {
@@ -112,11 +134,15 @@
 
       if (msg.type === "assistant_message") {
         setLoading(false);
+        hideAuthBanner();
         addMessage("assistant", msg.assistant_text || "", {
           pending_action_id: msg.pending_action_id || null,
           pending_action_summary: msg.pending_action_summary || null
         });
         setTrace(msg.trace || []);
+      } else if (msg.type === "auth_required") {
+        setLoading(false);
+        showAuthBanner(msg.auth_url || "/auth/start", msg.reason || "Gmail authorization required.");
       } else if (msg.type === "error") {
         setLoading(false);
         addMessage("assistant", "Error: " + (msg.error || "unknown"), null);
@@ -179,13 +205,22 @@ clearBtn.addEventListener("click", () => {
     traceOutput.textContent = "";
   });
 
-  toggleTraceBtn.addEventListener("click", () => {
-    traceVisible = !traceVisible;
+  function updateTraceToggle() {
+    const layout = document.querySelector(".layout");
     if (traceVisible) {
       tracePanel.classList.remove("hidden");
+      layout.classList.remove("trace-collapsed");
+      toggleTraceBtn.textContent = "Hide trace";
     } else {
       tracePanel.classList.add("hidden");
+      layout.classList.add("trace-collapsed");
+      toggleTraceBtn.textContent = "Show trace";
     }
+  }
+
+  toggleTraceBtn.addEventListener("click", () => {
+    traceVisible = !traceVisible;
+    updateTraceToggle();
   });
 
   document.querySelectorAll("[data-quick]").forEach((btn) => {
