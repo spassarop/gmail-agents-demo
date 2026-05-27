@@ -38,11 +38,16 @@ class GmailClient:
         self._service = None
         self._pending_flow: Optional[InstalledAppFlow] = None
 
+    # ------------------------------------------------------------------
+    # Auth helpers called by the web server (not by the agent)
+    # ------------------------------------------------------------------
+
     def needs_auth(self) -> bool:
+        """Return True if the current credentials are missing or cannot be refreshed."""
         token_path = self.secrets_dir / "token.json"
         cred_path = self.secrets_dir / "credentials.json"
         if not cred_path.exists():
-            return False
+            return False  # can't auth without credentials.json either
         if not token_path.exists():
             return True
         try:
@@ -52,6 +57,12 @@ class GmailClient:
             return True
 
     def prepare_auth_url(self, redirect_uri: str) -> str:
+        """Generate a Google OAuth authorization URL and store the pending flow.
+
+        The caller must redirect the user's browser to the returned URL.
+        After the user grants access, Google redirects to ``redirect_uri``
+        with a ``code`` query parameter; pass that to :meth:`exchange_code`.
+        """
         cred_path = self.secrets_dir / "credentials.json"
         if not cred_path.exists():
             raise GmailClientError(f"Missing Gmail OAuth credentials: {cred_path}")
@@ -67,6 +78,10 @@ class GmailClient:
         return auth_url
 
     def exchange_code(self, code: str) -> None:
+        """Exchange the OAuth authorization code for credentials and persist them.
+
+        Resets the cached service so the next Gmail call uses fresh credentials.
+        """
         if self._pending_flow is None:
             raise GmailClientError("No pending OAuth flow — call prepare_auth_url() first")
         try:
@@ -76,13 +91,19 @@ class GmailClient:
             raise GmailClientError(f"OAuth token exchange failed: {exc}") from exc
         finally:
             self._pending_flow = None
+
         token_path = self.secrets_dir / "token.json"
         token_path.write_text(creds.to_json(), encoding="utf-8")
-        self._service = None
+        self._service = None  # force rebuild with fresh credentials
         logger.info("Gmail credentials saved to %s", token_path)
 
     def invalidate(self) -> None:
+        """Force the service to be rebuilt on the next call (e.g. after re-auth)."""
         self._service = None
+
+    # ------------------------------------------------------------------
+    # Internal service construction
+    # ------------------------------------------------------------------
 
     def service(self):
         if self._service is None:
@@ -114,6 +135,8 @@ class GmailClient:
                     logger.warning("Token refresh failed: %s", exc)
                     raise AuthRequired() from exc
             else:
+                # Full OAuth needed — raise so the UI can surface the auth link.
+                # Do NOT block here with run_local_server(); that would stall the server.
                 raise AuthRequired()
 
         try:

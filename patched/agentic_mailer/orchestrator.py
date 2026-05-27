@@ -145,6 +145,24 @@ class Orchestrator:
                     self._emit(trace, "gmail_send_draft", {"draft_id": draft_id, "result": res})
                     return ChatResponse(assistant_text="✅ Sent (after confirmation).", trace=trace)
 
+                if pa.kind == "send_email":
+                    # SEND_EMAIL path defers all Gmail side-effects until here.
+                    to_email = str(pa.payload.get("to_email", ""))
+                    subject = str(pa.payload.get("subject", ""))
+                    body = str(pa.payload.get("body", ""))
+                    if not to_email:
+                        return ChatResponse(
+                            assistant_text="Pending action missing recipient; cannot send.",
+                            trace=trace,
+                        )
+                    res = self.gmail.send_email(to_email=to_email, subject=subject, body=body)
+                    self._emit(
+                        trace,
+                        "gmail_send_email",
+                        {"to": to_email, "subject": subject, "result": res},
+                    )
+                    return ChatResponse(assistant_text="✅ Sent (after confirmation).", trace=trace)
+
                 if pa.kind == "trash_message":
                     mid = str(pa.payload.get("message_id", ""))
                     email_number = pa.payload.get("email_number")

@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_ollama import ChatOllama
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
 from testing_shared.telemetry import add_current_event, traced
 
@@ -244,12 +244,18 @@ class ManagementAgent:
                 span.set_attribute("llm.output_preview", safe_truncate(raw_content, 300))
 
             # ── No tool call → agent is done ──────────────────────────
+            # ``tool_call_id`` is what we'll thread into ToolMessage so the
+            # LLM can correlate this turn's tool result with its tool_call.
+            tool_call_id: Optional[str] = None
             if not tool_calls:
                 if turn == 0:
                     # Model gave no tool call on the first turn; try heuristic
                     tool_name, args = self._heuristic_tool(user_message)
                     if tool_name:
                         self._emit(trace, "heuristic_fallback", {"tool": tool_name, "args": args})
+                        # Synthesize an id so the downstream ToolMessage is
+                        # well-formed even though no real tool_call existed.
+                        tool_call_id = f"heuristic-{turn}"
                     else:
                         return AgentResult(
                             assistant_text=raw_content or "I couldn't determine an action.",
@@ -262,6 +268,7 @@ class ManagementAgent:
                 call = tool_calls[0]
                 tool_name = (call.get("name") or "").upper()
                 args = call.get("args") or {}
+                tool_call_id = call.get("id") or f"call-{turn}"
 
             self._emit(trace, "tool_call", {"turn": turn, "tool": tool_name, "args": args})
 
@@ -332,7 +339,17 @@ class ManagementAgent:
                 tool_result_msg = f"TOOL RESULT ({tool_name}):\n{result.output}"
 
             messages.append(resp)  # AIMessage with structured tool_calls
-            messages.append(HumanMessage(content=tool_result_msg))
+            # Use ToolMessage (not HumanMessage) so the model sees the result
+            # as a tool reply linked to its emitted tool_call via tool_call_id.
+            # This keeps the chat history well-typed and avoids confusing the
+            # model into thinking the user just spoke.
+            messages.append(
+                ToolMessage(
+                    content=tool_result_msg,
+                    tool_call_id=tool_call_id or f"call-{turn}",
+                    name=tool_name,
+                )
+            )
 
         return AgentResult(
             assistant_text="(agent reached the turn limit without a final answer)",

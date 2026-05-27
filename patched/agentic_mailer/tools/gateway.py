@@ -18,6 +18,8 @@ from ..security.intent_gate import IntentGate
 from ..security.hitl import HITLManager
 from ..security.schemas import (
     DraftEmailRequest,
+    EmailDraft,
+    EmailSummary,
     ListEmailsRequest,
     ReadEmailRequest,
     SendEmailRequest,
@@ -414,21 +416,16 @@ class ToolGateway:
             )
             self._emit(trace, "a2a_handoff", asdict(envelope))
 
-            summary = self.summary_agent.summarize(sanitized_msg)
+            a2a_resp = self.summary_agent.handle(envelope, sanitized_msg)
+            # Rehydrate the structured summary from the response so the
+            # downstream user-facing rendering keeps working unchanged.
+            summary = EmailSummary(**a2a_resp.result)
             self._emit(trace, "summary_agent_structured", summary.model_dump())
 
             # Layer 3b — canary check on summary output.
             summary_text = summary.summary or ""
             self._check_canary(summary_text, trace)
 
-            # A2A response: Summary Agent → Management
-            a2a_resp = HandoffResponse(
-                from_agent="summary",
-                to_agent="management",
-                request_id=envelope.request_id,
-                result=summary.model_dump(),
-                provenance="email_content",
-            )
             self._emit(trace, "a2a_response", asdict(a2a_resp))
 
             # Build user-facing output.
@@ -458,7 +455,7 @@ class ToolGateway:
                 success=True,
                 output=output,
                 data=asdict(a2a_resp),
-                provenance="email_content",   # mark: downstream provenance guard will check this
+                provenance=a2a_resp.provenance,
             )
 
     def _dispatch_draft_email(
@@ -493,31 +490,26 @@ class ToolGateway:
                     {"id": msg.id, "subject": msg.subject},
                 )
 
-                # A2A handoff: Management → Composition Agent
+                # A2A handoff: Management → Composition Agent.
+                # The envelope is a real input to handle(); the sub-agent
+                # returns a typed HandoffResponse with its own provenance.
                 envelope = HandoffEnvelope(
                     from_agent="management",
                     to_agent="composition",
                     task="draft_reply",
-                    payload={"email_id": mid, "user_instruction": user_message},
+                    payload={
+                        "email_id": mid,
+                        "user_instruction": user_message,
+                        "to_email": to_email or None,
+                    },
                     request_id=_short_uuid(),
                 )
                 self._emit(trace, "a2a_handoff", asdict(envelope))
 
-                draft_obj = self.composition_agent.draft_reply(
-                    msg,
-                    user_instruction=user_message,
-                    to_email=to_email or None,
-                )
+                a2a_resp = self.composition_agent.handle(envelope, msg)
+                draft_obj = EmailDraft(**a2a_resp.result)
                 self._emit(trace, "composition_agent_structured", draft_obj.model_dump())
 
-                # A2A response: Composition Agent → Management
-                a2a_resp = HandoffResponse(
-                    from_agent="composition",
-                    to_agent="management",
-                    request_id=envelope.request_id,
-                    result=draft_obj.model_dump(),
-                    provenance="system",
-                )
                 self._emit(trace, "a2a_response", asdict(a2a_resp))
 
                 to_email = to_email or draft_obj.to_email
@@ -669,18 +661,21 @@ class ToolGateway:
             attributes={"app.mode": "patched", "tool.name": "SEND_EMAIL", "security.require_confirmation": True},
         ):
             a = req.args
-            draft = self.gmail.create_draft(to_email=a.to_email, subject=a.subject, body=a.body)
-            self._emit(
-                trace,
-                "gmail_create_draft_for_send",
-                {"draft_id": draft.id, "to": a.to_email, "subject": a.subject},
-            )
 
             pa = self.hitl.create_pending(
                 session=session,
-                kind="send_draft",
+                kind="send_email",
                 summary=f"About to send email to {a.to_email} (subject: {a.subject}). Confirm to send.",
-                payload={"draft_id": draft.id},
+                payload={
+                    "to_email": a.to_email,
+                    "subject": a.subject,
+                    "body": a.body,
+                },
+            )
+            self._emit(
+                trace,
+                "hitl_prepare_send",
+                {"pending_action_id": pa.id, "to": a.to_email, "subject": a.subject},
             )
 
             output = (
@@ -695,7 +690,7 @@ class ToolGateway:
                 tool="SEND_EMAIL",
                 success=True,
                 output=output,
-                data={"draft_id": draft.id, "to": a.to_email, "subject": a.subject},
+                data={"pending_action_id": pa.id, "to": a.to_email, "subject": a.subject},
                 require_confirmation=True,
                 pending_action_id=pa.id,
                 pending_action_summary=pa.summary,
